@@ -1,0 +1,168 @@
+# Amethyst, built by GitHub and published to this fork's GitHub Pages site (a test page, linked from nowhere yet).
+#   firmware:  the FM-1 package (JieLi toolchain + the AC79 SDK, cached after the first run), and how full the app slot is
+#   browser:   the same firmware compiled to WebAssembly (web/emu/build.sh), published at /webapp/try/
+#   publish:   the site: / is a short test page (landing/), /webapp/try/ runs Amethyst in the browser
+# After Double Rainbow's double-rainbow.yml and Rainbow mode's rainbow.yml (joshbartlettband-web). The browser version
+# needs nothing from JieLi, so it is published even when the firmware job fails.
+# Melodee's own workflows (nightly, emulator, release) run only on its nightly branch and release tags: not here.
+# Setup, once: Actions enabled on the fork, and Settings > Pages > Source set to "GitHub Actions".
+name: amethyst
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: amethyst-pages
+  cancel-in-progress: false
+
+env:
+  SDK_TAG: AC79NN_SDK_V1.2.1_2023-12-13
+  SDK_SHA: d179b4484759423312073f5fbb232501aa491047    # the commit Melodee's nightly pins
+  BUILD_TAG: am                                        # added to the version, so the menu shows this build (v1.6.1-am)
+  EMSDK_VERSION: 3.1.74
+
+jobs:
+  firmware:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    outputs:
+      release: ${{ steps.ver.outputs.release }}
+    env:
+      JIELI_TOOLCHAIN: ${{ github.workspace }}/.deps/jieli/toolchain
+      AC79_SDK: ${{ github.workspace }}/.deps/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build dependencies (Pillow with Raqm for the UI font, fontTools)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libharfbuzz-dev libfribidi-dev libraqm-dev >/dev/null
+          python -m pip install -r tools/requirements-build.txt
+
+      - name: Version
+        id: ver
+        run: |
+          v=$(sed -n 's/^#define MELODEE_VERSION "v\([^"]*\)".*/\1/p' firmware/src/melodee.c | head -n 1)
+          echo "release=$v-$BUILD_TAG" >> "$GITHUB_OUTPUT"
+          echo "Building Amethyst on Melodee $v"
+
+      - uses: actions/cache@v4
+        with:
+          path: .deps
+          key: jieli-linux-sdk-d179b448-v1
+
+      - name: The JieLi toolchain and SDK
+        run: |
+          if [ ! -x "$JIELI_TOOLCHAIN/pi32v2/bin/clang" ]; then
+            tools/get_toolchain.sh "$GITHUB_WORKSPACE/.deps/jieli"
+          fi
+          if [ ! -d "$AC79_SDK/.git" ]; then
+            for i in 1 2 3; do
+              git clone --depth 1 --branch "$SDK_TAG" https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$AC79_SDK" && break
+              echo "clone failed (try $i), retrying"; rm -rf "$AC79_SDK"; sleep 30
+            done
+          fi
+          test "$(git -C "$AC79_SDK" rev-parse HEAD)" = "$SDK_SHA"
+
+      - name: Build the firmware
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          mkdir -p out
+          cp build/*.fwsc out/
+          ls -la out
+
+      - name: How full the app slot is
+        run: |
+          line=$(grep -m1 'image .* B; RAM' build.log || true)
+          {
+            echo "### Amethyst on the FM-1"
+            echo ""
+            echo "\`$line\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$line"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out
+          if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build dependencies (Pillow with Raqm for the UI font, fontTools)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libharfbuzz-dev libfribidi-dev libraqm-dev >/dev/null
+          python -m pip install -r tools/requirements-build.txt
+
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
+      - name: Build for the browser
+        run: sh web/emu/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser
+          path: build/emu
+          if-no-files-found: error
+
+  publish:
+    needs: [firmware, browser]
+    if: always() && needs.browser.result == 'success'
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get the browser build
+        uses: actions/download-artifact@v4
+        with:
+          name: browser
+          path: site/webapp/try
+
+      - name: Get the firmware (kept beside the page for testing; no installer yet)
+        if: needs.firmware.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: site/firmware
+
+      - name: The test page
+        run: |
+          cp landing/index.html site/index.html
+          sed -i "s|@REPO@|${{ github.repository }}|g" site/index.html
+          touch site/.nojekyll
+          find site -type f | sort
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

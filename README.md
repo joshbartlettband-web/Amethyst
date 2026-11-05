@@ -1,3 +1,21 @@
+# Amethyst
+
+Drum and bass for the M-VAVE FM-1, set in a London a few years from now: wet streets, sodium lamps, tower blocks and
+moss over all of it. A break is always running. You play the bass and the chords over it, chop the break on the black
+keys, and hold a button to build up to the drop. Made by Josh, with the concept and the look by kipatchi.
+
+Amethyst is a fork of [Melodee](https://github.com/keremimo/melodee) by Kerem Kilic (Ellic Studio), a modified version
+of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita, Hügelton Instruments. It is not made or endorsed by
+either of them, or by M-VAVE. Nothing of Amethyst's own is built yet: this fork builds Melodee as it is, for now.
+
+- The plan: [docs/AMETHYST.md](docs/AMETHYST.md). The history it comes from: [docs/amethyst/CULTURE.md](docs/amethyst/CULTURE.md)
+- The build: `.github/workflows/amethyst.yml` builds the firmware and the browser version and puts them on this fork's
+  GitHub Pages site, for testing
+
+Installing firmware is at your own risk. Everything below is Melodee's own README.
+
+---
+
 # Melodee
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
