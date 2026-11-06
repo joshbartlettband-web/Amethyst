@@ -6,7 +6,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Melodee in the browser</title>
+<title>Amethyst in the browser</title>
+<meta name="robots" content="noindex">
 <style>
   :root { --bg: #fff; --fg: #000; --dim: #777; --body: #3a3d42; --tray: #26282c; --knob: #1f2124; --btn: #2e3135;
           --label: #e8e8ea; --key-w: #d9dadc; --key-b: #c9cacd; --lit: #ffb347; }
@@ -45,10 +46,11 @@
 </head>
 <body>
 <main>
-  <h1>Melodee in the browser</h1>
-  <p>Melodee @VERSION@'s UI and sound, as WebAssembly, on a drawn FM-1: the same code the FM-1 runs. Mouse, touch,
-    or the computer keyboard (the letters on the keys). Nothing is saved; there is no USB.
-    <a href="../webapp/installer/">Install it on your FM-1</a>.</p>
+  <h1>Amethyst in the browser</h1>
+  <p>Amethyst, a test build on Melodee @VERSION@, as WebAssembly on a drawn FM-1: the same code the FM-1 runs. Mouse,
+    touch, or the computer keyboard (the letters on the keys): Z to M is the bass, Q to O the chords, the black keys
+    (S D F H J, 2 3 4 6 7 9) chop the break. Hold FX to build, let go to drop, then SCL when it says REWIND.
+    HOME and SAVE held 3 seconds: the full Melodee. Nothing is saved; there is no USB.</p>
   <div class="device" id="device">
     <div class="poweron" id="poweron"><button id="power">Switch on</button></div>
   </div>
@@ -56,7 +58,9 @@
     <label class="small">MIDI in <select id="midiin"><option value="">none</option></select></label>
     <span class="small" id="status"></span>
   </div>
-  <p class="small">Melodee is GPL-3.0, no warranty. <a href="https://github.com/keremimo/melodee">Source</a>.
+  <p class="small">Amethyst by Josh, concept and look by kipatchi, on <a href="https://github.com/keremimo/melodee">Melodee</a>
+    by Kerem Kilic (Ellic Studio), a modified version of Felucca by Leo Kuroshita, Hügelton Instruments. GPL-3.0, no
+    warranty. The End's photo: steve_w (CC BY 2.0), changed with Gemini.
     M-VAVE and FM-1 are trademarks of their respective owners.</p>
 </main>
 <script>
