@@ -29,9 +29,10 @@ static struct {
     uint16_t moss;                                     /* how far the moss has reached, 0..280 (amethyst reach) */
     char msg[32];
 } am AM_POOL;
-static uint8_t am_pic[240u * 120u] AM_POOL;            /* the stage's photo, 4 bits a pixel, unpacked */
-static uint8_t am_moss[60u * 120u] AM_POOL;            /* the moss, 120 x 120, 4 bits a pixel (0: see-through) */
-static uint8_t am_reach[120u * 120u] AM_POOL;          /* how late the moss reaches each of its pixels, 0..255 */
+/* one band of each picture at a time, unpacked as it is drawn (the pool's room is the audio arena's: 49 KB of it must
+ * stay free, so the pictures are never unpacked whole) */
+static uint8_t am_pic[AM_BAND * 120u] AM_POOL;          /* 16 rows of the stage's photo, 4 bits a pixel */
+static uint8_t am_moss[AM_BAND * 60u] AM_POOL;          /* 16 rows of the moss, 120 px wide (0: see-through) */
 
 /* ------------------------------------------------------------ the sounds --- */
 /* our own Prophet programs (Sequential's are not Amethyst's): raw fields over p5_patch_init's defaults */
@@ -267,21 +268,11 @@ static uint16_t am_rgb(const uint8_t *c, uint32_t lift, uint32_t white)   /* lif
     r += (255u - r) * white / 255u; g += (255u - g) * white / 255u; b += (255u - b) * white / 255u;
     return RGB(r, g, b);
 }
-static void am_unpack(void)                             /* the pictures into the pool, once */
+static uint32_t am_reach(uint32_t x, uint32_t y)        /* how late the moss reaches its pixel (x, y), 0..~280 */
 {
-    uint32_t k, x, y;
-    for (k = 0; k + 1u < NELEM(AM_END_AT); k++)
-        lz_unpack(am_pic + k * AM_BAND * 120u, AM_END_LZ + AM_END_AT[k], AM_BAND * 120u);
-    for (k = 0, y = 0; k + 1u < NELEM(AM_MOSS_AT); k++, y += AM_BAND) {
-        uint32_t rows = 120u - y < AM_BAND ? 120u - y : AM_BAND;
-        lz_unpack(am_moss + y * 60u, AM_MOSS_LZ + AM_MOSS_AT[k], rows * 60u);
-    }
-    for (y = 0; y < 120u; y++)                          /* up from the bottom, in from the sides, ragged */
-        for (x = 0; x < 120u; x++) {
-            uint32_t h = (x / 4u) * 374761393u + (y / 4u) * 668265263u, side = x < 60u ? x : 119u - x;
-            h = (h ^ (h >> 13)) * 1274126177u;
-            am_reach[y * 120u + x] = (uint8_t)(y < 120u ? (119u - y) * 150u / 120u + side * 70u / 60u + ((h >> 24) & 63u) : 255u);
-        }
+    uint32_t h = (x / 4u) * 374761393u + (y / 4u) * 668265263u, side = x < 60u ? x : 119u - x;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return (119u - y) * 150u / 120u + side * 70u / 60u + ((h >> 24) & 63u);   /* up from the bottom, in from the sides */
 }
 
 static void am_label(int32_t y, const char *title, const char *sub)
@@ -319,10 +310,21 @@ static void am_draw(void)
         cv_begin_band(240, 240, 0, band);
         for (y = cv_top; y < cv_top + cv_rows && y < 240u; y++) {
             uint16_t *o = cv_px + (y - cv_top) * 240u;
-            const uint8_t *p = am_pic + y * 120u, *m = am_moss + (y / 2u) * 60u, *r = am_reach + (y / 2u) * 120u;
+            const uint8_t *p, *m;
+            if (y % AM_BAND == 0u || y == cv_top)       /* the photo's band, unpacked */
+                lz_unpack(am_pic, AM_END_LZ + AM_END_AT[y / AM_BAND], AM_BAND * 120u);
+            if ((y / 2u) % AM_BAND == 0u && y % 2u == 0u) {   /* the moss's band (its rows are 2 screen rows each) */
+                uint32_t my = y / 2u, rows = 120u - my < AM_BAND ? 120u - my : AM_BAND;
+                lz_unpack(am_moss, AM_MOSS_LZ + AM_MOSS_AT[my / AM_BAND], rows * 60u);
+            } else if (y == cv_top) {
+                uint32_t my = (y / 2u) / AM_BAND * AM_BAND, rows = 120u - my < AM_BAND ? 120u - my : AM_BAND;
+                lz_unpack(am_moss, AM_MOSS_LZ + AM_MOSS_AT[my / AM_BAND], rows * 60u);
+            }
+            p = am_pic + (y % AM_BAND) * 120u;
+            m = am_moss + ((y / 2u) % AM_BAND) * 60u;
             for (x = 0; x < 240u; x += 2u) {
                 uint32_t mi = (x / 2u) & 1u ? m[x / 4u] & 15u : m[x / 4u] >> 4;
-                if (mi && r[x / 2u] < am.moss) {        /* the moss has reached here */
+                if (mi && am.moss && am_reach(x / 2u, y / 2u) < am.moss) {   /* the moss has reached here */
                     o[x] = o[x + 1u] = mpal[mi];
                 } else {
                     o[x] = pal[p[x / 2u] >> 4];
@@ -399,7 +401,6 @@ static void am_leds(void)
 static void am_boot(void)
 {
     led_pos_init();
-    am_unpack();
     am.knob[0] = 40;
     am.knob[1] = 35;
     am.knob[2] = 15;
