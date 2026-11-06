@@ -6,7 +6,14 @@ keys, and hold a button to build up to the drop. Made by Josh, with the concept 
 
 Amethyst is a fork of [Melodee](https://github.com/keremimo/melodee) by Kerem Kilic (Ellic Studio), a modified version
 of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita, Hügelton Instruments. It is not made or endorsed by
-either of them, or by M-VAVE. Nothing of Amethyst's own is built yet: this fork builds Melodee as it is, for now.
+either of them, or by M-VAVE.
+
+The first stage is built: FRIDAY, at The End. It starts at power-on. The break runs at 174; the low white keys
+play a Reese, the high ones sevenths of A minor, the black keys chop the break. Hold FX to build, let go to drop;
+after a good drop the crowd calls for a rewind, and SCL answers it. Three rewinds cut the stage's VIP. ENV is half
+time, LFO a tape stop, SEQ the break out and in, SELECT the tempo, OCT- and OCT+ the bass's octave, the four knobs
+WOBBLE, FOG, GRIT and MOSS. HOME and SAVE held 3 seconds open the full Melodee. Amethyst's code is
+`firmware/src/amethyst.c` and `amethyst_seq.h`.
 
 - The plan: [docs/AMETHYST.md](docs/AMETHYST.md). The history it comes from: [docs/amethyst/CULTURE.md](docs/amethyst/CULTURE.md)
 - The build: `.github/workflows/amethyst.yml` builds the firmware and the browser version and puts them on this fork's

@@ -114,6 +114,7 @@ static uint8_t res_ok;                  /* res.c: installed and this build's; el
 #include "ui_menu.c"
 #include "ui_input.c"
 #include "ui_layer.c"              /* the quick layers (GLO SCL held) */
+#include "amethyst.c"               /* Amethyst: its own code (amethyst_seq.h: the audio interrupt's part) */
 
 /* --------------------------------------------- storage, update, editor --- */
 #if MELODEE_FLASH

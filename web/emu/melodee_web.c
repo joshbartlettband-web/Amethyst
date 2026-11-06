@@ -37,6 +37,7 @@ EXPORT(web_boot) void web_boot(uint32_t master)       /* main.c melodee_init, as
     palette_set(settings.palette);
     ui.force = 1;
     screen_clear();
+    am_boot();                                         /* Amethyst from power-on, as main.c (amethyst.c) */
 }
 
 /* the panel: matrix ids (PANEL_DEFAULT's), as fm1_in and the scan would have them */
@@ -104,10 +105,13 @@ static void tick(void)
     now_ms++;
     fm1_ms++;
     host_ticks += 1000u;                               /* (ui_test.c: FM1_TICKS_PER_US 1) */
-    ui_input();
+    if (!am.on)                                        /* (Amethyst reads the panel itself, once a frame) */
+        ui_input();
     if (now_ms % 15u == 0u) {
-        ui_leds();
-        ui_draw();
+        if (!am_frame()) {                             /* main.c: Amethyst's screen while it is on */
+            ui_leds();
+            ui_draw();
+        }
         if (memcmp(fb_seen, host_screen, sizeof fb_seen)) {
             memcpy(fb_seen, host_screen, sizeof fb_seen);
             fb_gen++;

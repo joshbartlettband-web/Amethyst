@@ -107,6 +107,7 @@ static struct { uint32_t stage; } melodee_dbg;
 #include "../firmware/src/ui_menu.c"
 #include "../firmware/src/ui_input.c"
 #include "../firmware/src/ui_layer.c"
+#include "../firmware/src/amethyst.c"
 #include "../firmware/src/upreset.c"
 #include "../firmware/src/project.c"
 #include "../firmware/src/fm6_store.c"

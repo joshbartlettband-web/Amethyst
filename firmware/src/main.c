@@ -286,6 +286,7 @@ static void fm1_main(void)
     }
     glo_restore();                            /* CLK TUNE MIDI ROUT as last used, */
     project_boot();                           /* then the BOOT project or the template (theirs win, not CLK) */
+    am_boot();                                /* Amethyst from power-on (amethyst.c); HOME + SAVE held: Melodee */
     fm1_delay_ms(400);
     fm1_audio_unmute();                       /* the codec settled on silent I2S since audio_init: no cold-boot click */
     if (boot_work.state != 2u)
@@ -398,8 +399,10 @@ static void fm1_main(void)
         melodee_dbg.page = ui.page;
         melodee_dbg.home = ui.home;
         melodee_dbg.stage = 1;
-        ui_input();
-        glo_poll();                                     /* a kept GLO value changed: the settings, later */
+        if (!am_frame()) {                              /* Amethyst's screen while it is on (amethyst.c) */
+            ui_input();
+            glo_poll();                                 /* a kept GLO value changed: the settings, later */
+        }
 #if MELODEE_BLE
         ble_boot_poll();
         mel_ble_poll();
@@ -407,11 +410,14 @@ static void fm1_main(void)
 #endif
         settings_poll();                              /* queued settings save: only while stopped */
         melodee_dbg.stage = 2;
-        ui_leds();
-        ui_draw();
+        if (!am.on) {
+            ui_leds();
+            ui_draw();
+        }
         melodee_dbg.stage = 9;
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
-            ui_input();
+            if (!am.on)
+                ui_input();
 #if MELODEE_OTA
             ed_service();                       /* editor replies without waiting for the next frame */
 #endif

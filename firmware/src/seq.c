@@ -85,6 +85,7 @@ static uint32_t key_place(uint32_t k)
     return n;
 }
 enum { GK_ACC = NLANE, GK_PGDN, GK_PGUP };       /* black keys 9..11 on the grid */
+#include "amethyst_seq.h"                        /* Amethyst: the key zones and the break's chop */
 
 static uint32_t scale_mask(const track_t *t)
 {
@@ -843,6 +844,16 @@ static void keyboard_block(void)
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
             kb_trk[k] = song.sel;
+            if (am_seq.on) {                      /* Amethyst: a black key holds a slice of the break, the low */
+                if (key_black(k)) {               /* white keys play the bass, the high ones the chords */
+                    am_seq.cn = 0;
+                    am_seq.chop = (uint8_t)(1u + key_place(k));
+                    kb_note[k] = KB_SILENT;
+                    kb_layer |= 1u << k;
+                    continue;
+                }
+                kb_trk[k] = k < 12u ? AM_TBASS : AM_TCHORD;
+            }
             if (kb_asleep) { kb_note[k]=KB_SILENT; continue; }
             if ((fm1_in.buttons & punch_panel_mask) || punch_panel_lock) {
                 kb_note[k] = KB_SILENT;
@@ -870,6 +881,8 @@ static void keyboard_block(void)
             kb_lat(k);
 #endif
         } else {
+            if (am_seq.on && key_black(k) && am_seq.chop == 1u + key_place(k))
+                am_seq.chop = 0;                  /* (Amethyst: the slice let go; the break is back on its bar) */
             if (punch_claimed & (1u << k)) {
                 punch_claimed &= ~(1u << k);
                 if (punch.keybit == (1u << k)) { punch.req = -1; punch.keybit = 0; }
@@ -1189,6 +1202,7 @@ static void seq_grid_tick(track_t *t, uint32_t n)
             t->seq_pos += chain.seek_phase[trk_index(t)]; chain.seek_phase[trk_index(t)] = 0;
         }
         t->seq_idx = (uint16_t)((t->seq_idx + 1u) % (len ? len : 1u));
+        am_seq_step(t, starting, len);                 /* Amethyst: the chop, the drop (amethyst.c) */
         if (!t->seq_idx && !starting && !chain.running) {
             uint8_t bit = (uint8_t)(1u << trk_index(t));
             if (song.rec_pass & (uint8_t)~song.rec_latch & bit) rec_set(t, 0);
