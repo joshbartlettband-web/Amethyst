@@ -71,6 +71,18 @@ static void btn(uint32_t b, int on)
 }
 static void tap(uint32_t b) { btn(b, 1); run_ms(60); btn(b, 0); }
 
+/* a knob set straight to a value (not through the encoder, which only moves 2 % a click) and a screenshot: step 2's
+ * check, shots at 0 and 100 for each knob */
+static void knob_shot(const char *dir, const char *name, uint32_t idx, uint32_t val)
+{
+    char tag[64];
+    am.knob[idx] = (uint8_t)val;
+    am_knobs();
+    run_ms(60);
+    snprintf(tag, sizeof tag, "knob-%s-%u", name, val);
+    shot(dir, tag);
+}
+
 /* hold FX for n beats at the current tempo, then let go, watching how long the drop takes: step 1's check */
 static uint32_t beat_ms(void) { return (uint32_t)(60000.0 / (song.g[G_BPM] > 40 ? song.g[G_BPM] : 174)); }
 static void build_beats(const char *dir, const char *tag, uint32_t beats)
@@ -101,6 +113,10 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     wav_header(wav, 0);
     web_boot(800);
     run_ms(1500); shot(dir, "0-boot");
+    knob_shot(dir, "wobble", 0, 0); knob_shot(dir, "wobble", 0, 100); am.knob[0] = 40; am_knobs();
+    knob_shot(dir, "fog", 1, 0); knob_shot(dir, "fog", 1, 100); am.knob[1] = 35; am_knobs();
+    knob_shot(dir, "grit", 2, 0); knob_shot(dir, "grit", 2, 100); am.knob[2] = 15; am_knobs();
+    knob_shot(dir, "moss", 3, 0); knob_shot(dir, "moss", 3, 100); am.knob[3] = 30; am_knobs();
     key(4, 1); run_ms(500);                            /* A3: the Reese */
     key(16, 1); run_ms(700); shot(dir, "1-bass-chord");   /* A4: a chord (Am7) */
     key(16, 0); key(4, 0); key(2, 1); run_ms(300); key(2, 0); key(7, 1); run_ms(400); key(7, 0);   /* G3, C4 */
