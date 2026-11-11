@@ -16,6 +16,10 @@
 #define AM_POOL __attribute__((section(".pool")))     /* Amethyst's RAM: the pool (.bss is Melodee's and nearly full) */
 #define AM_HOLD_MS 3000u                               /* HOME + SAVE: to Melodee */
 #define AM_BTN(b) (1u << panel.btn[b])
+/* SLOOP's effects replay the last 0.37 s of the mix from a ring, and Melodee keeps that ring only while a punch key
+ * is held (punch.keybit). Amethyst holds a key that is no key for as long as it is on, so the ring is always
+ * recording and BUILD, REWIND, HALF and STOP have something to play. Without it they are silent. */
+#define AM_PKEY (1u << 31)
 #include "am_art.h"                                    /* AM_END_*, AM_MOSS_* (tools/amethyst/gen_am_art.py) */
 
 static void project_boot(void);                        /* project.c (included after this file) */
@@ -140,6 +144,8 @@ static void am_say(const char *s)
     str_cpy(am.msg, s, sizeof am.msg);
     am.msg_t0 = fm1_ms | 1u;
 }
+/* ms since t0, a time kept as fm1_ms | 1 (0: never), so maybe a millisecond ahead: never negative */
+static uint32_t am_since(uint32_t t0) { int32_t d = (int32_t)(fm1_ms - t0); return d > 0 ? (uint32_t)d : 0u; }
 static uint32_t am_bar_ms(void) { return 240000u / (uint32_t)(song.g[G_BPM] > 40 ? song.g[G_BPM] : 174); }
 
 static void am_build(uint32_t on)
@@ -151,13 +157,12 @@ static void am_build(uint32_t on)
         am.build_t0 = fm1_ms | 1u;
         am.call = 0;
         am_seq.drop = 0;
-        punch.keybit = 0;
         punch.req = PX_LOOP8;
         trk[AM_TBASS].p[P_MUTE] = 1;                    /* the bass out while it builds */
         am_say("BUILDING...");
     } else if (am.building) {
         am.building = 0;
-        am.build_ms = fm1_ms - am.build_t0;
+        am.build_ms = am_since(am.build_t0);
         am_seq.drop = 1;                                /* (amethyst_seq.h: on the next bar's first step) */
     }
 }
@@ -168,7 +173,6 @@ static void am_rewind(void)
         return;
     }
     am.call = 0;
-    punch.keybit = 0;
     punch.req = PX_RWD;                                 /* the record dragged back under the needle */
     am.rwd_t0 = fm1_ms | 1u;
     am_say("PULL UP!");
@@ -182,15 +186,16 @@ static void am_stop(void)
         am_say("FROM THE TOP");
         return;
     }
-    punch.keybit = 0;
     punch.req = PX_STOP;                                /* the tape slows to nothing */
     am.stop_t0 = fm1_ms | 1u;
 }
 static void am_poll(void)
 {
     uint32_t bar = am_bar_ms();
+    if (punch.keybit != AM_PKEY)                        /* (also after Melodee resets its effects) */
+        punch.keybit = AM_PKEY;
     if (am.building) {                                  /* the loops get shorter: 1/8, 1/16, 1/32 */
-        uint32_t held = fm1_ms - am.build_t0;
+        uint32_t held = am_since(am.build_t0);
         int8_t want = held < bar ? PX_LOOP8 : held < 2u * bar ? PX_LOOP16 : PX_LOOP32;
         if (punch.req != want)
             punch.req = want;
@@ -207,7 +212,7 @@ static void am_poll(void)
     }
     if (am.call && (int32_t)(fm1_ms - am.call_until) >= 0)
         am.call = 0;
-    if (am.rwd_t0 && fm1_ms - am.rwd_t0 >= 700u) {      /* the rewind done: the tune again from the top */
+    if (am.rwd_t0 && am_since(am.rwd_t0) >= 600u) {      /* the rewind done: the tune again from the top */
         am.rwd_t0 = 0;
         punch.req = -1;
         transport_req = 3;
@@ -220,7 +225,7 @@ static void am_poll(void)
         } else
             am_say("COME AGAIN");
     }
-    if (am.stop_t0 && fm1_ms - am.stop_t0 >= 900u) {    /* the tape stopped: the transport too */
+    if (am.stop_t0 && am_since(am.stop_t0) >= 900u) {    /* the tape stopped: the transport too */
         am.stop_t0 = 0;
         punch.req = -1;
         transport_req = 2;
@@ -236,7 +241,7 @@ static void am_poll(void)
         if (am.moss < 280u)
             am.moss = (uint16_t)(am.moss + 2u + am.knob[3] / 20u);
     }
-    if (am.msg[0] && !am.combo_t0 && fm1_ms - am.msg_t0 > 2500u)
+    if (am.msg[0] && !am.combo_t0 && am_since(am.msg_t0) > 2500u)
         am.msg[0] = 0;
 }
 
@@ -251,7 +256,6 @@ static void am_seq_step(track_t *t, uint32_t starting, uint32_t len)
     t->seq_idx = (uint16_t)idx;
     if (am_seq.drop && am_seq.ghost % 16u == 0u) {     /* the drop: on the one */
         punch.req = -1;
-        punch.keybit = 0;
         trk[AM_TBASS].p[P_MUTE] = 0;
         am_seq.drop = 0;
         am_seq.dropped = 1;
@@ -290,10 +294,10 @@ static void am_draw(void)
     uint16_t pal[16], mpal[16];
     uint32_t i, band, x, y, kick = 0, white = 0, glow;
     char sub[40];
-    if (am.kick_ms && fm1_ms - am.kick_ms < 220u)
-        kick = 220u - (fm1_ms - am.kick_ms);           /* 220 .. 0 ms after the kick */
+    if (am.kick_ms && am_since(am.kick_ms) < 220u)
+        kick = 220u - am_since(am.kick_ms);           /* 220 .. 0 ms after the kick */
     if (am.building) {
-        uint32_t held = fm1_ms - am.build_t0, two = 2u * am_bar_ms();
+        uint32_t held = am_since(am.build_t0), two = 2u * am_bar_ms();
         white = (held > two ? two : held) * 150u / two;
     }
     glow = kick * 14u / 220u;
@@ -332,7 +336,7 @@ static void am_draw(void)
                 }
             }
         }
-        if (am.drop_t0 && fm1_ms - am.drop_t0 < 8u * am_bar_ms()) {   /* lasers after the drop */
+        if (am.drop_t0 && am_since(am.drop_t0) < 8u * am_bar_ms()) {   /* lasers after the drop */
             uint32_t f = (fm1_ms / 90u) & 1u;
             for (i = 0; i < 9u; i++) {
                 int32_t ex = -60 + (int32_t)i * 45, ey = i == 4u ? 240 : 150 + (int32_t)((i > 4u ? 8u - i : i) * 10u);
@@ -353,7 +357,7 @@ static void am_draw(void)
                 cv_disc(lx, ly - 10 - (int32_t)fl, 6 + (int32_t)fl, RGB(226, 140, 48), 0);
             }
         }
-        if (am.plate_t0 && fm1_ms - am.plate_t0 < 3500u) {   /* the dubplate, just cut */
+        if (am.plate_t0 && am_since(am.plate_t0) < 3500u) {   /* the dubplate, just cut */
             cv_rect(0, 64, 240, 176, RGB(11, 9, 15));
             cv_disc(120, 150, 150, RGB(24, 22, 28), 0);
             cv_ring(120, 150, 120, RGB(44, 40, 52));
@@ -408,6 +412,7 @@ static void am_boot(void)
     am_setup();
     am.on = 1;
     am_seq.on = 1;
+    punch.keybit = AM_PKEY;
     transport_req = 1;                                  /* the break from the start */
     am_say("AMETHYST  -  JOSH & KIPATCHI");
 }
@@ -472,11 +477,15 @@ static int am_frame(void)
         am_build(0);
     if (pressed & AM_BTN(B_SCL))
         am_rewind();
-    if ((pressed & AM_BTN(B_ENV)) && !am.building && !am.rwd_t0) {
-        am.half ^= 1u;                                  /* HALF: the whole night at half speed, and back */
-        punch.keybit = 0;
-        punch.req = am.half ? PX_HALF : -1;
-        am_say(am.half ? "HALF TIME" : "FULL TIME");
+    if ((pressed & AM_BTN(B_ENV)) && !am.building && !am.rwd_t0 && !am.stop_t0) {
+        am.half = 1;                                    /* HALF: SLOOP's half speed, while ENV is held (kept on, */
+        punch.req = PX_HALF;                            /* it runs out of the 0.37 s it replays and falls quiet) */
+        am_say("HALF SPEED");
+    }
+    if ((released & AM_BTN(B_ENV)) && am.half) {
+        am.half = 0;
+        if (punch.req == PX_HALF)
+            punch.req = -1;
     }
     if (pressed & AM_BTN(B_LFO))
         am_stop();
