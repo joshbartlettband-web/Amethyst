@@ -28,7 +28,7 @@ static struct {
     uint8_t on, building, call, vip, half, stopped, rewinds, plate;
     uint8_t knob[4];                                   /* WOBBLE FOG GRIT MOSS, 0..100 */
     int8_t oct;                                        /* the bass's octave, -2..+1 */
-    uint32_t combo_t0, build_t0, build_ms, call_until, rwd_t0, stop_t0, msg_t0, draw_ms, kick_ms, drop_t0, plate_t0;
+    uint32_t combo_t0, build_t0, build_steps, call_until, rwd_t0, stop_t0, msg_t0, draw_ms, kick_ms, drop_t0, plate_t0;
     uint32_t kicks, bar0, held;                       /* held: the buttons last pass (their releases) */
     uint16_t moss;                                     /* how far the moss has reached, 0..280 (amethyst reach) */
     char msg[32];
@@ -151,19 +151,26 @@ static uint32_t am_bar_ms(void) { return 240000u / (uint32_t)(song.g[G_BPM] > 40
 static void am_build(uint32_t on)
 {
     if (on) {
-        if (!song.playing || am.rwd_t0 || am.stop_t0)
+        if (am.rwd_t0 || am.stop_t0)
             return;
+        if (!song.playing) {                            /* nothing is building if nothing is playing */
+            am_say("PRESS PLAY FIRST");
+            return;
+        }
         am.building = 1;
         am.build_t0 = fm1_ms | 1u;
         am.call = 0;
         am_seq.drop = 0;
+        am_seq.bstep = 0;
+        am_seq.building = 1;
         punch.req = PX_LOOP8;
         trk[AM_TBASS].p[P_MUTE] = 1;                    /* the bass out while it builds */
         am_say("BUILDING...");
     } else if (am.building) {
         am.building = 0;
-        am.build_ms = am_since(am.build_t0);
-        am_seq.drop = 1;                                /* (amethyst_seq.h: on the next bar's first step) */
+        am_seq.building = 0;
+        am.build_steps = am_seq.bstep;                  /* 16ths it was held: the drop's rewind test reads this */
+        am_seq.drop = 1;                                /* (amethyst_seq.h: on the next beat's first step) */
     }
 }
 static void am_rewind(void)
@@ -194,16 +201,16 @@ static void am_poll(void)
     uint32_t bar = am_bar_ms();
     if (punch.keybit != AM_PKEY)                        /* (also after Melodee resets its effects) */
         punch.keybit = AM_PKEY;
-    if (am.building) {                                  /* the loops get shorter: 1/8, 1/16, 1/32 */
-        uint32_t held = am_since(am.build_t0);
-        int8_t want = held < bar ? PX_LOOP8 : held < 2u * bar ? PX_LOOP16 : PX_LOOP32;
-        if (punch.req != want)
+    if (am.building) {                                  /* the loops get shorter every 4 beats: 1/8, 1/16, 1/32 */
+        uint32_t beats = am_seq.bstep / 4u;
+        int8_t want = beats < 4u ? PX_LOOP8 : beats < 8u ? PX_LOOP16 : PX_LOOP32;
+        if (punch.req != want && am_seq.ghost % 4u == 0u)   /* changed on a beat: never mid-loop */
             punch.req = want;
     }
     if (am_seq.dropped) {                               /* the drop landed (the ISR let go of the loop) */
         am_seq.dropped = 0;
         am.drop_t0 = fm1_ms | 1u;
-        if (am.build_ms >= bar) {                       /* built for a bar or more: the crowd wants it again */
+        if (am.build_steps >= 16u) {                    /* held 4 beats (a bar) or more: the crowd wants it again */
             am.call = 1;
             am.call_until = fm1_ms + 8u * bar;
             am_say("");
@@ -245,21 +252,25 @@ static void am_poll(void)
         am.msg[0] = 0;
 }
 
-/* the break's step on the sequencer (amethyst_seq.h): the chop, the drop, the kicks. In the audio interrupt. */
+/* the break's step on the sequencer (amethyst_seq.h): the chop, the build's beat count, the drop, the kicks. In
+ * the audio interrupt. */
 static void am_seq_step(track_t *t, uint32_t starting, uint32_t len)
 {
     uint32_t idx;
     if (!am_seq.on || t != &trk[AM_TBREAK] || !len)
         return;
     am_seq.ghost = (uint16_t)(starting ? 0u : (am_seq.ghost + 1u) % len);
-    idx = am_seq.chop ? (AM_SLICE[(am_seq.chop - 1u) % AM_SLICES] + (am_seq.cn++ & 1u)) % len : am_seq.ghost;
-    t->seq_idx = (uint16_t)idx;
-    if (am_seq.drop && am_seq.ghost % 16u == 0u) {     /* the drop: on the one */
+    if (am_seq.building && am_seq.bstep < 0xFFFFu)      /* 16ths since BUILD was pressed (amethyst.c: the loop length */
+        am_seq.bstep++;                                 /* and whether it earns a rewind) */
+    if (am_seq.drop && am_seq.ghost % 4u == 0u) {       /* the drop: on the next beat, the break from its first step */
         punch.req = -1;
         trk[AM_TBASS].p[P_MUTE] = 0;
+        am_seq.ghost = 0;
         am_seq.drop = 0;
         am_seq.dropped = 1;
     }
+    idx = am_seq.chop ? (AM_SLICE[(am_seq.chop - 1u) % AM_SLICES] + (am_seq.cn++ & 1u)) % len : am_seq.ghost;
+    t->seq_idx = (uint16_t)idx;
     if (seq_steps(t)[idx].hit & 1u)
         am_seq.kicks++;
 }
@@ -366,7 +377,24 @@ static void am_draw(void)
             cv_text_c(120, ty_y(140, TY_LB), TY_LB, "FRIDAY", RGB(40, 30, 110), RGB(236, 228, 210));
             cv_text_c(120, ty_y(162, TY_TX), TY_TX, "VIP", RGB(216, 48, 60), RGB(236, 228, 210));
         }
-        if (am.msg[0]) {                                /* the line at the bottom */
+        if (am.building) {                              /* the build meter: three beats a segment, 1/8 1/16 1/32 */
+            uint32_t seg = am_seq.bstep / 16u, fill;
+            if (seg > 2u)
+                seg = 2u;
+            fill = am_seq.bstep - seg * 16u;
+            if (fill > 16u)
+                fill = 16u;
+            cv_rect(0, 206, 240, 34, RGB(12, 10, 10));
+            for (i = 0; i < 3u; i++) {
+                int32_t x0 = 4 + (int32_t)i * 79;
+                cv_rect(x0, 208, 75, 10, RGB(44, 40, 52));
+                if (i < seg)
+                    cv_rect(x0, 208, 75, 10, RGB(226, 140, 48));
+                else if (i == seg && fill)
+                    cv_rect(x0, 208, (int32_t)(75u * fill / 16u), 10, RGB(226, 140, 48));
+            }
+            cv_text_c(120, ty_y(232, TY_LB), TY_LB, "LET GO TO DROP", RGB(226, 140, 48), RGB(12, 10, 10));
+        } else if (am.msg[0]) {                         /* the line at the bottom */
             cv_rect(0, 212, 240, 28, RGB(12, 10, 10));
             cv_text_c(120, ty_y(226, TY_LB), TY_LB, am.msg, RGB(226, 140, 48), RGB(12, 10, 10));
         }
@@ -424,7 +452,7 @@ static void am_leave(void)
     uint32_t i;
     am.on = 0;
     am_seq.on = 0;
-    am_seq.chop = am_seq.drop = 0;
+    am_seq.chop = am_seq.drop = am_seq.building = 0;
     punch.req = -1;
     punch.keybit = 0;
     transport_req = 2;

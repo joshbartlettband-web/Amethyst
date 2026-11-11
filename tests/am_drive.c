@@ -71,6 +71,26 @@ static void btn(uint32_t b, int on)
 }
 static void tap(uint32_t b) { btn(b, 1); run_ms(60); btn(b, 0); }
 
+/* hold FX for n beats at the current tempo, then let go, watching how long the drop takes: step 1's check */
+static uint32_t beat_ms(void) { return (uint32_t)(60000.0 / (song.g[G_BPM] > 40 ? song.g[G_BPM] : 174)); }
+static void build_beats(const char *dir, const char *tag, uint32_t beats)
+{
+    uint32_t prev_drop, waited = 0;
+    char mid[64];
+    btn(B_FX, 1);
+    run_ms(beats * beat_ms() / 2u);
+    snprintf(mid, sizeof mid, "%s-mid", tag);
+    shot(dir, mid);                                     /* the meter, partway through the hold */
+    run_ms(beats * beat_ms() / 2u + beat_ms() / 2u);    /* land safely past the beat boundary */
+    prev_drop = am.drop_t0;
+    btn(B_FX, 0);
+    while (am.drop_t0 == prev_drop && waited < 2u * beat_ms()) { run_ms(5); waited += 5; }
+    printf("build %2u beats (%s): drop %u ms after release (a beat is %u ms), call %u, rewinds %u\n",
+           beats, tag, waited, beat_ms(), am.call, am.rewinds);
+    shot(dir, tag);
+    run_ms(8u * beat_ms());                              /* let any rewind call time out before the next build */
+}
+
 __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (before ui_test.c's main: it exits) */
 {
     const char *dir = argc > 1 ? argv[1] : ".";
@@ -86,7 +106,10 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     key(16, 0); key(4, 0); key(2, 1); run_ms(300); key(2, 0); key(7, 1); run_ms(400); key(7, 0);   /* G3, C4 */
     key(1, 1); run_ms(220); shot(dir, "2-chop"); run_ms(400); key(1, 0);   /* F#3: slice 1 held */
     key(8, 1); run_ms(350); key(8, 0); run_ms(500);    /* C#4: slice 4 */
-    for (round = 0; round < 3u; round++) {             /* three builds, three rewinds: the VIP */
+    build_beats(dir, "1beat", 1);                      /* step 1: short builds don't earn a rewind */
+    build_beats(dir, "5beats", 5);                     /* long ones (4+) do */
+    build_beats(dir, "9beats", 9);                     /* and reach LOOP32 (beats 8+) */
+    for (round = 0; round < 3u; round++) {             /* three more builds, three rewinds: the VIP */
         btn(B_FX, 1); run_ms(2900);
         if (!round) shot(dir, "3-build");
         btn(B_FX, 0); run_ms(1600);

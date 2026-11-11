@@ -13,10 +13,12 @@
 static struct {
     volatile uint8_t on;          /* the keys are Amethyst's */
     volatile uint8_t chop;        /* 1 + the slice a black key holds; 0 none */
-    volatile uint8_t drop;        /* 1: the build was let go: the drop lands on the next bar's first step */
+    volatile uint8_t drop;        /* 1: the build was let go: the drop lands on the next beat's first step */
     volatile uint8_t dropped;     /* the drop landed (amethyst.c clears it) */
+    volatile uint8_t building;    /* amethyst.c: FX is held, so bstep counts 16ths since it was pressed */
     uint8_t cn;                   /* the held slice's 16ths so far */
     uint16_t ghost;               /* the break's step without the chop */
+    volatile uint16_t bstep;      /* 16ths since BUILD started (amethyst.c reads it for the loop length and meter) */
     volatile uint32_t kicks;      /* the break's kicks so far (the screen's pulse) */
 } am_seq;
 /* where each black key's slice starts, in 16ths of the break's two bars */
