@@ -20,7 +20,7 @@ from gen_tables import lz_pack  # noqa: E402
 SRC = ROOT / "docs" / "amethyst" / "gemini"
 # colors every stage's palette keeps (violet, light violet, moss, light moss, sodium, the aerial's red)
 KEEP = [(138, 82, 210), (206, 172, 248), (84, 112, 44), (150, 182, 82), (226, 140, 48), (255, 60, 70)]
-STAGES = [("END", "the-end-moss.jpg")]
+STAGES = [("END", "the-end-moss.jpg"), ("MILLS", "turnmills-moss.jpg")]
 BAND = 16
 
 

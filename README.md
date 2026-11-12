@@ -8,11 +8,12 @@ Amethyst is a fork of [Melodee](https://github.com/keremimo/melodee) by Kerem Ki
 of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita, Hügelton Instruments. It is not made or endorsed by
 either of them, or by M-VAVE.
 
-The first stage is built: FRIDAY, at The End. It starts at power-on. The break runs at 174; the low white keys
+Two stages are built: FRIDAY at The End, which starts at power-on, and DARKSIDE at Turnmills; PRESETS moves
+between them. FRIDAY's break runs at 174; the low white keys
 play a Reese, the high ones sevenths of A minor, the black keys chop the break. Hold FX to build, let go to drop;
 after a good drop the crowd calls for a rewind, and SCL answers it. Three rewinds cut the stage's VIP. Held, ENV is
 half speed, LFO a tape stop, EDIT the break out, and GLO a dub siren on the high keys. SEQ takes the break out and
-brings it back, ARP changes which keys play what, HOME shows the sleeve notes, SELECT is the tempo, OCT- and OCT+
+brings it back, ARP changes which keys play what, HOME shows the sleeve notes, ALGORITHM picks the break (ROLLER, CHOPPED, HALF TIME, TWO-STEP), SELECT is the tempo, OCT- and OCT+
 the bass's octave, the four knobs WOBBLE, FOG, GRIT and MOSS. HOME and SAVE held 3 seconds open the full Melodee. Amethyst's code is
 `firmware/src/amethyst.c` and `amethyst_seq.h`.
 

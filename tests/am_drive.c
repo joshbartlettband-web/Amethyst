@@ -160,6 +160,14 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     tap(B_HOME); run_ms(300);
     { uint32_t i; for (i = 0; i < 30u; i++) { host_enc[panel.enc[EN_K4]] += 1; run_ms(30); } }   /* MOSS up */
     run_ms(4000); shot(dir, "8-moss");
+    host_enc[panel.enc[EN_PRESET]] += panel.dir[EN_PRESET]; run_ms(1500); shot(dir, "12-turnmills");   /* step 4: stage 2 */
+    printf("stage %u: %s at %s, %d BPM, break %u, vip %u, playing %u\n", am.stage, AM_STAGE->night, AM_STAGE->venue,
+           song.g[G_BPM], am.pat_now, am.vip, song.playing);
+    key(4, 1); run_ms(1500); key(16, 1); run_ms(1500); key(16, 0); key(4, 0);
+    tap(B_HOME); run_ms(300); shot(dir, "13-turnmills-notes"); tap(B_HOME);
+    am.knob[1] = 100; am.knob[3] = 100; am_knobs(); run_ms(4000); shot(dir, "14-turnmills-fog-moss");
+    host_enc[panel.enc[EN_PRESET]] += panel.dir[EN_PRESET]; run_ms(1000);
+    printf("and back: stage %u, %d BPM\n", am.stage, song.g[G_BPM]);
     wav_header(wav, wav_frames);
     fclose(wav);
     printf("rewinds %u, vip %u, moss %u, playing %u\n", am.rewinds, am.vip, am.moss, song.playing);

@@ -22,12 +22,13 @@
  * is held (punch.keybit). Amethyst holds a key that is no key for as long as it is on, so the ring is always
  * recording and BUILD, REWIND, HALF and STOP have something to play. Without it they are silent. */
 #define AM_PKEY (1u << 31)
-#include "am_art.h"                                    /* AM_END_*, AM_MOSS_* (tools/amethyst/gen_am_art.py) */
+#include "am_art.h"                                    /* AM_END_*, AM_MILLS_*, AM_MOSS_* (tools/amethyst/gen_am_art.py) */
 
 static void project_boot(void);                        /* project.c (included after this file) */
 
 static struct {
     uint8_t on, building, call, vip, half, stopping, rewinds, plate;
+    uint8_t stage;                                     /* AM_STAGES[]: PRESETS */
     uint8_t pat, pat_now;                              /* the break ALGORITHM chose, and the one loaded */
     uint8_t brk_out, cut, notes, home_combo;           /* SEQ's latch, EDIT held, the sleeve notes, HOME went to the combo */
     uint8_t knob[4];                                   /* WOBBLE FOG GRIT MOSS, 0..100 */
@@ -89,7 +90,7 @@ static const uint8_t AM_SIREN[][2] = {
  * (x accented, o plain, - a rim ghost), h the closed hat (O: open), g ghosts on the rim. ROLLER is the 2000s roller
  * FRIDAY starts on; CHOPPED leans on the Amen's shape (two kicks, the snare late and doubled); HALF TIME puts the
  * kick on 1 and the snare on 3; TWO-STEP is the plain kick, snare, kick, snare. The VIP is the roller with the kick
- * doubled and the snare busier. */
+ * doubled and the snare busier; the other three get a hat on every 16th. */
 typedef struct { const char *name, *k, *s, *h, *g; } am_break_t;
 #define AM_NBREAK 4u
 static const am_break_t AM_BREAKS[AM_NBREAK + 1u] = {
@@ -118,9 +119,47 @@ static void am_break_load(void)                         /* the break ALGORITHM i
         if (b->h[i] == 'x') grid_hit(t, i, 3, 1);
         if (b->h[i] == 'O') grid_hit(t, i, 4, 1);
     }
+    if (am.vip && am.pat)                               /* the other breaks' VIP: a hat on every 16th without one */
+        for (i = 1; i < 32u; i += 2u)
+            if (b->h[i] == '.')
+                grid_hit(t, i, 3, 1);
     t->p[P_SLEN] = 32;
     am.pat_now = am.pat;
 }
+
+/* DARK REESE: the same two saws further apart, the filter lower and ringing: DARKSIDE's bass. (The plan wants a CZ-1
+ * patch here, as Kevin Saunderson made his; nobody has heard this build yet, so it stays on the engine we know.) */
+static const uint8_t AM_DREESE[][2] = {
+    {P5_FREQ_A, 24}, {P5_FREQ_B, 24}, {P5_FINE_B, 15}, {P5_SAW_A, 1}, {P5_SAW_B, 1}, {P5_KEY_B, 1},
+    {P5_LEVEL_A, 124}, {P5_LEVEL_B, 124}, {P5_CUTOFF, 36}, {P5_RESONANCE, 48}, {P5_KEY_FILTER, 1}, {P5_FILTER_REV, 0},
+    {P5_ENV_FILTER, 34}, {P5_DECAY_FILTER, 70}, {P5_SUSTAIN_FILTER, 40}, {P5_RELEASE_FILTER, 30},
+    {P5_DECAY_AMP, 90}, {P5_SUSTAIN_AMP, 127}, {P5_RELEASE_AMP, 28}, {P5_RELEASE_ON, 1}, {P5_GLIDE, 34},
+    {P5_LFO_RATE, 30}, {P5_LFO_TRI, 1}, {P5_WHEEL_FILTER, 1}, {P5_VINTAGE, 40}, {P5_BEND, 2},
+};
+
+/* The stages, a detent of PRESETS apiece: the night and its venue, the photo, the tempo, the break it starts on, the
+ * bass, how far down the chords sit, and the sleeve notes (ten lines, the photo's credit last). */
+typedef struct {
+    const char *night, *venue;
+    const uint8_t *pal, *lz;
+    const uint16_t *at;
+    const uint8_t (*bass)[2];
+    uint8_t nbass, bpm, pat;
+    int8_t chord_trans;
+    const char *notes[10];
+    uint8_t credit;                                    /* the first line of the photo's credit */
+} am_stage_t;
+static const am_stage_t AM_STAGES[] = {
+    {"FRIDAY", "THE END", AM_END_PAL, AM_END_LZ, AM_END_AT, AM_REESE, NELEM(AM_REESE), 174, 0, 0,
+     {"FABRIC OPENED IN 1999", "AND KEPT FRIDAYS FOR", "DRUM AND BASS: DJ HYPE'S", "PLAYAZ. MAY 2001: VALVE,",
+      "DILLINJA AND LEMON D'S", "SOUND SYSTEM, 52 SUBS.", "THE END, WEST CENTRAL", "STREET, CLOSED IN 2009.",
+      "PHOTO: steve_w, CC BY 2.0,", "CHANGED WITH GEMINI"}, 8},
+    {"DARKSIDE", "TURNMILLS", AM_MILLS_PAL, AM_MILLS_LZ, AM_MILLS_AT, AM_DREESE, NELEM(AM_DREESE), 165, 1, -12,
+     {"1994: RENEGADE'S", "TERRORIST TAKES ONE NOTE", "OF KEVIN SAUNDERSON'S", "1988 BASS, THE REESE.",
+      "DARKSIDE HAS ITS SOUND.", "TURNMILLS, CLERKENWELL", "ROAD, CLOSED IN 2008.",
+      "PHOTO: Rubberist,", "PUBLIC DOMAIN,", "CHANGED WITH GEMINI"}, 7},
+};
+#define AM_STAGE (&AM_STAGES[am.stage % NELEM(AM_STAGES)])
 
 static void am_knobs(void)                              /* the four knobs onto the sounds */
 {
@@ -137,6 +176,7 @@ static void am_knobs(void)                              /* the four knobs onto t
 
 static void am_setup(void)                              /* the stage's tracks, tempo and break */
 {
+    const am_stage_t *st = AM_STAGE;
     track_t *b = &trk[AM_TBASS], *c = &trk[AM_TCHORD], *d = &trk[AM_TBREAK], *n = &trk[AM_TSIREN];
     undo_depth++;
     set_engine_of(n, ENGI_PROPHET);
@@ -150,7 +190,7 @@ static void am_setup(void)                              /* the stage's tracks, t
     apply_preset_to(d, 1);                              /* 909 KIT */
     undo_depth--;
     fm1_irq_off();
-    am_p5(p5_patch_of(b), AM_REESE, NELEM(AM_REESE), "REESE");
+    am_p5(p5_patch_of(b), st->bass, st->nbass, "REESE");
     p5_track_accept(b);
     am_p5(p5_patch_of(c), AM_PAD, NELEM(AM_PAD), "FOG PAD");
     p5_track_accept(c);
@@ -164,11 +204,16 @@ static void am_setup(void)                              /* the stage's tracks, t
     c->p[P_ROOT] = 9;                                   /* A */
     c->p[P_SCALE] = 2;                                  /* MIN */
     c->p[P_VOIC] = 1;                                   /* OPEN */
+    c->p[P_TRANS] = st->chord_trans;
     b->p[P_MUTE] = c->p[P_MUTE] = d->p[P_MUTE] = 0;
     n->p[P_MUTE] = 1;                                   /* (the siren rests until GLO) */
     fm1_irq_on();
+    am.pat = st->pat;
+    am.vip = am.rewinds = am.call = am.brk_out = 0;      /* each stage earns its own VIP */
+    am.oct = 0;
+    am.moss = 0;
     am_break_load();
-    song.g[G_BPM] = 174;
+    song.g[G_BPM] = st->bpm;
     am_knobs();
 }
 
@@ -252,7 +297,12 @@ static void am_poll(void)
             am.vip = 1;
             am_break_load();
             am.plate_t0 = fm1_ms | 1u;
-            am_say("DUBPLATE CUT: FRIDAY VIP");
+            {
+                char m[32] = "DUBPLATE CUT: ";
+                str_cpy(m + 14, AM_STAGE->night, sizeof m - 14u);
+                str_cpy(m + str_len(m), " VIP", 5);
+                am_say(m);
+            }
         } else
             am_say("COME AGAIN");
     }
@@ -367,7 +417,8 @@ static void am_draw(void)
     uint32_t wobble_phase = (fm1_ms * 64u) / wobble_cycle;
     uint32_t fog_phase = (fm1_ms * 64u) / 3200u;                    /* FOG: drifts, about 3.2 s a cycle */
     uint32_t frame_hash = fm1_ms / 120u;                            /* the grain and the tears change 8 times a second */
-    char sub[40];
+    char sub[40], title[24];
+    const am_stage_t *st = AM_STAGE;
     if (am.kick_ms && am_since(am.kick_ms) < 220u)
         kick = 220u - am_since(am.kick_ms);           /* 220 .. 0 ms after the kick */
     if (am.building) {
@@ -376,11 +427,12 @@ static void am_draw(void)
     }
     glow = kick * 14u / 220u;
     for (i = 0; i < 16u; i++) {
-        am_pal_rgb(pal_rgb[i], AM_END_PAL + 3u * i, kick * 3u / 220u, white, tr, tg, tb);
+        am_pal_rgb(pal_rgb[i], st->pal + 3u * i, kick * 3u / 220u, white, tr, tg, tb);
         mpal[i] = swap16(am_rgb(AM_MOSS_PAL + 3u * i, (AM_MOSS_PAL[3u * i] + AM_MOSS_PAL[3u * i + 1u] > 260u) ? glow : 0u, white / 2u));
     }
     mpal[0] = 0;
-    str_cpy(sub, "FRIDAY  -  ", sizeof sub);
+    str_cpy(sub, st->night, sizeof sub);
+    str_cpy(sub + str_len(sub), "  -  ", 6);
     fmt_int(sub + str_len(sub), song.g[G_BPM]);
     str_cpy(sub + str_len(sub), " BPM", 5);
     cv_oy = 0;
@@ -392,7 +444,7 @@ static void am_draw(void)
             int32_t dx = 0, al;
             uint32_t rng = am_hash(y + frame_hash * 977u), sy = y & grit_and;
             if (y % AM_BAND == 0u || y == cv_top)        /* the photo's band, unpacked */
-                lz_unpack(am_pic, AM_END_LZ + AM_END_AT[y / AM_BAND], AM_BAND * 120u);
+                lz_unpack(am_pic, st->lz + st->at[y / AM_BAND], AM_BAND * 120u);
             /* FOG: this row's palette toward the fog, thicker lower down, drifting a little */
             al = y > 40u ? (int32_t)((y - 40u) * am.knob[1] * 70u / 20000u) : 0;
             al += (8 * (int32_t)am.knob[1] * AM_SIN[(((y * 290u) >> 8) + fog_phase) & 63u]) / 10000;
@@ -448,7 +500,10 @@ static void am_draw(void)
                 cv_line(120, 96, ex, ey, (i + f) & 1u ? RGB(206, 172, 248) : RGB(150, 210, 130));
             }
         }
-        am_label(10, am.vip ? "THE END  VIP" : "THE END", sub);
+        str_cpy(title, st->venue, sizeof title);
+        if (am.vip)
+            str_cpy(title + str_len(title), "  VIP", 6);
+        am_label(10, title, sub);
         if (am.call) {                                  /* the crowd: lighters up, the call */
             uint32_t blink = (fm1_ms / 300u) & 1u;
             cv_rect(0, 76, 240, 78, RGB(12, 10, 14));
@@ -468,18 +523,13 @@ static void am_draw(void)
             cv_ring(120, 150, 120, RGB(44, 40, 52));
             cv_ring(120, 150, 96, RGB(44, 40, 52));
             cv_disc(120, 150, 64, RGB(236, 228, 210), 0);
-            cv_text_c(120, ty_y(140, TY_LB), TY_LB, "FRIDAY", RGB(40, 30, 110), RGB(236, 228, 210));
+            cv_text_c(120, ty_y(140, TY_LB), TY_LB, st->night, RGB(40, 30, 110), RGB(236, 228, 210));
             cv_text_c(120, ty_y(162, TY_TX), TY_TX, "VIP", RGB(216, 48, 60), RGB(236, 228, 210));
         }
-        if (am.notes) {                                 /* the sleeve notes: where FRIDAY comes from */
-            static const char *const N[10] = {
-                "FABRIC OPENED IN 1999", "AND KEPT FRIDAYS FOR", "DRUM AND BASS: DJ HYPE'S", "PLAYAZ. MAY 2001: VALVE,",
-                "DILLINJA AND LEMON D'S", "SOUND SYSTEM, 52 SUBS.", "THE END, WEST CENTRAL", "STREET, CLOSED IN 2009.",
-                "PHOTO: steve_w, CC BY 2.0,", "CHANGED WITH GEMINI",
-            };
+        if (am.notes) {                                 /* the sleeve notes: where the night comes from */
             cv_rect(0, 66, 240, 174, RGB(12, 10, 10));
             for (i = 0; i < 10u; i++)
-                cv_text_c(120, ty_y(76 + (int32_t)i * 17, TY_LB), TY_LB, N[i], i >= 8u ? RGB(150, 140, 160) : RGB(214, 196, 160),
+                cv_text_c(120, ty_y(76 + (int32_t)i * 17, TY_LB), TY_LB, st->notes[i], i >= st->credit ? RGB(150, 140, 160) : RGB(214, 196, 160),
                           RGB(12, 10, 10));
         } else if (am.building) {                       /* the build meter: three beats a segment, 1/8 1/16 1/32 */
             uint32_t seg = am_seq.bstep / 16u, fill;
@@ -687,8 +737,15 @@ static int am_frame(void)
         str_cpy(m + str_len(m), " BPM", 5);
         am_say(m);
     }
-    if (fm1_enc_take(panel.enc[EN_PRESET]) != 0)
-        am_say("ONE STAGE SO FAR: FRIDAY");
+    if ((s = fm1_enc_take(panel.enc[EN_PRESET]) * panel.dir[EN_PRESET]) != 0 && !am.building && !am.rwd_t0) {
+        char m[32];                                     /* PRESETS: the next stage, its own sounds, tempo and break */
+        am.stage = (uint8_t)((am.stage + (s > 0 ? 1u : NELEM(AM_STAGES) - 1u)) % NELEM(AM_STAGES));
+        am_setup();
+        str_cpy(m, AM_STAGE->night, sizeof m);
+        str_cpy(m + str_len(m), " AT ", 5);
+        str_cpy(m + str_len(m), AM_STAGE->venue, sizeof m - str_len(m));
+        am_say(m);
+    }
     if ((s = fm1_enc_take(panel.enc[EN_ALGO]) * panel.dir[EN_ALGO]) != 0) {   /* ALGORITHM: the break, a detent each */
         char m[24] = "BREAK: ";
         am.pat = (uint8_t)((am.pat + (s > 0 ? 1u : AM_NBREAK - 1u)) % AM_NBREAK);

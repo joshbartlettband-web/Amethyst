@@ -17,7 +17,7 @@ other name). It sits on Melodee 1.6.1 (Kerem Kilic) the way Double Rainbow's `dr
 - Test page: https://joshbartlettband-web.github.io/Amethyst/webapp/try/ (CI publishes it on every push, about 3 min).
 - Do not link Amethyst from Josh's other projects. Josh hasn't cleared that yet.
 
-One stage is built, FRIDAY at The End:
+Two stages are built, FRIDAY at The End and DARKSIDE at Turnmills (`AM_STAGES[]`). On either:
 
 | Control | Now |
 | --- | --- |
@@ -36,10 +36,12 @@ One stage is built, FRIDAY at The End:
 | PLAY | Start / stop |
 | OCT- / OCT+ | Bass octave |
 | SELECT | Tempo 140..180 |
+| ALGORITHM | The break: ROLLER, CHOPPED, HALF TIME, TWO-STEP (`AM_BREAKS[]`), loaded on the next bar |
+| PRESETS | The stage: its photo, tempo, starting break, bass and sleeve notes; VIP and moss start over |
 | K1..K4 | WOBBLE, FOG, GRIT, MOSS (0..100): each changes the sound and the picture, a bar on screen while it turns |
 | HOME + SAVE 3 s | Leave to full Melodee (`am_leave`) |
 
-The break is track 4 (`AM_TBREAK` 3): DRUM engine, 909 kit, 32 steps, patterns in `AM_FRIDAY[2]` (normal, VIP).
+The break is track 4 (`AM_TBREAK` 3): DRUM engine, 909 kit, 32 steps, patterns in `AM_BREAKS[]` (four and the roller's VIP).
 
 ## 2. How it is wired (the only Melodee files touched)
 
@@ -161,7 +163,12 @@ In `am_draw`, per row, all cheap:
 ### Step 3. The rest of the top row and bottom row
 Done, as are steps 1 and 2 (step 2 twice: Josh found the first knob looks overcooked, so GRIT is grain, blocks
 and a few torn rows now, FOG is per row, WOBBLE sways 4 px at most). One trap found: Melodee's `kb_mask` and
-`punch_panel_mask` make a key pressed with a button held silent; `am_poll` clears them every pass. Step 4 is next.
+`punch_panel_mask` make a key pressed with a button held silent; `am_poll` clears them every pass.
+
+Steps 4 and 6 are done too. Step 6 came first, because the second photo needed its room: `AMETHYST_NO_FACTORY`
+in `core.h` empties both banks. DARKSIDE's bass is a darker Prophet Reese (`AM_DREESE`), not the CZ-1 patch the
+plan asks for; voice that once Josh has listened. Melodee's tests that count 200 programs and 64 tones fail with
+the flag on (CI doesn't run them). Step 5 is next, and Josh has to be asked first.
 - **LFO held**: `PX_STOP` while held; on release clear it and carry on (no transport stop). Remove the tap logic.
 - **EDIT held**: break muted while held (`trk[AM_TBREAK].p[P_MUTE]`), restore on release. SEQ stays the latch.
 - **GLO held**: dub siren. Simplest: track 3 (index 2, currently muted) gets its own Prophet program (pulse,
