@@ -8,6 +8,9 @@
  * the MIDI Track engine, sequenced like the parts, never rendered or mixed (NMIDI).
  * Sections: sizes, parameters, voices and engines, tracks and the song, system. */
 #include <stdint.h>
+/* Amethyst (amethyst.c) plays sounds of its own and does not ship Sequential's 200 Prophet programs or Casio's 64
+ * CZ-1 tones: both banks are empty (INIT only), and their data is left out of the build. */
+#define AMETHYST_NO_FACTORY 1
 #include "performance_options.h"
 #include "tuning.h"
 #include "audio_profile.h"

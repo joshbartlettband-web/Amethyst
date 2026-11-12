@@ -7,6 +7,10 @@
 #include "x0x/fastmath.h"
 #include "prophet_patch.c"
 #include "melodee_prophet_factory.h"   /* Sequential's 200 v1.03 programs (tools/gen_prophet_factory.py) */
+#ifdef AMETHYST_NO_FACTORY             /* (core.h: none of them in Amethyst) */
+#undef P5_FACTORY_N
+#define P5_FACTORY_N 0u
+#endif
 #if MELODEE_DUAL_CORE
 #define P5_POLY 8u
 #else
@@ -567,6 +571,9 @@ static void p5_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vm
 /* Sequential's factory program k (0..P5_FACTORY_N-1), unpacked (tools/gen_prophet_factory.py pack) */
 static void p5_factory(uint32_t k,p5_patch_t *p)
 {
+#ifdef AMETHYST_NO_FACTORY
+    (void)k;p5_patch_init(p);
+#else
     if(!RES_OK()){p5_patch_init(p);return;}         /* (res.c: the factory programs not installed) */
     const uint8_t *b=P5_FPACK+k*P5_FACTORY_BYTES;
     uint32_t pos=0;
@@ -576,6 +583,7 @@ static void p5_factory(uint32_t k,p5_patch_t *p)
         p->raw[i]=(uint8_t)(P5_FBASE[i]+v);
     }
     p->size=P5_RAW_MAX;p->model=0x32;p->command=2;p->group=(uint8_t)(k/40u);p->program=(uint8_t)(k%40u);
+#endif
 }
 /* INIT, then Sequential's factory programs in their order (111..588 on the
  * Prophet: preset k is program k-1 of the v1.03 bank), named as the programs are. Dry, as the Prophet. */

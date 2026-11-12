@@ -4,14 +4,22 @@
  * Envelope state and note reset utilities are shared with the phase family. */
 #include "cz_native.c"
 #include "melodee_cz1.h"            /* Casio's 64 CZ-1 preset tones (tools/gen_cz1_factory.py) */
+#ifdef AMETHYST_NO_FACTORY          /* (core.h: none of them in Amethyst) */
+#undef CZ_FACTORY_N
+#define CZ_FACTORY_N 0u
+#endif
 /* Casio's tone k (0..CZ_FACTORY_N-1) into raw (CZ_BYTES), unpacked against CZ_DICT (tools/gen_cz1_factory.py) */
 static void cz_factory(uint32_t k, uint8_t *raw)
 {
+#ifdef AMETHYST_NO_FACTORY
+    (void)k; cz_patch_init(raw);
+#else
     uint8_t b[2u * CZ_BYTES];
     if (!RES_OK()) { cz_patch_init(raw); return; }  /* (res.c: Casio's tones not installed) */
     memcpy(b, CZ_DICT, CZ_BYTES);
     lz_unpack(b + CZ_BYTES, CZ_LZ + CZ_LZ_AT[k % CZ_FACTORY_N], CZ_BYTES);
     memcpy(raw, b + CZ_BYTES, CZ_BYTES);
+#endif
 }
 /* A factory preset: Casio's tone at its BANK A..D / PTCH 1..16 (the CZ-1's A-1 .. H-8, as the default
  * banks hold them, cz_bank.c), INIT TONE the init voice. Restored and imported tones bypass this hook */
@@ -61,8 +69,10 @@ static void cz_preset_make(uint32_t k, preset_t *pr, char *name)
     k--;
     pr->e[0] = (int8_t)(k / 16u);
     pr->e[1] = (int8_t)(k % 16u + 1u);
+#ifndef AMETHYST_NO_FACTORY
     for (i = 0; i < NELEM(CZ_SHORT); i++)
         if (CZ_SHORT[i].k == k) { str_cpy(name, CZ_SHORT[i].name, 21); return; }
+#endif
     cz_factory(k, raw);
     while (a < z && raw[a] == ' ') a++;
     while (z > a && raw[z - 1u] == ' ') z--;
