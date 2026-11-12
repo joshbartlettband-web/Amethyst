@@ -340,22 +340,20 @@ static void am_label(int32_t y, const char *title, const char *sub)
 static void am_draw(void)
 {
     uint8_t pal_rgb[16][3];
-    uint16_t mpal[16], row_pal[16];
+    uint16_t mpal[16], row_pal[16], row_dark[16], row_light[16];
     uint32_t i, band, x, y, kick = 0, white = 0, glow, bar = am_bar_ms();
-    uint32_t grit_eff = (uint32_t)am.knob[2] * 70u / 100u;         /* GRIT's strongest is about the sketch's 70 */
-    uint32_t grit_drop = grit_eff * 3u / 100u;                     /* palette index bits snapped off, 0..2 */
-    uint32_t grit_mask = (uint32_t)(0xFu << grit_drop) & 0xFu;
-    uint32_t grit_block = 1u + grit_eff * 3u / 100u;               /* the photo's source read, in blocks of 1..3 */
-    uint32_t grit_speck = grit_eff * 13u / 100u;                   /* 0..9 of 256: up to about 3.5% of pixels */
-    uint32_t grit_tear = grit_eff / 3u;                            /* 0..23 of 256: a few torn rows, not many */
+    uint32_t grit = am.knob[2];
+    uint32_t grit_and = grit >= 45u ? ~1u : ~0u;                   /* GRIT past 45: the photo in 2 x 2 blocks */
+    uint32_t grit_dark = grit * 40u / 100u, grit_light = grit * 10u / 100u;   /* grain: of 256 pixels, darker / lighter */
+    uint32_t grit_tear = grit * 8u / 100u;                         /* of 256 row pairs, torn sideways */
     uint32_t moss_reach = am.knob[3] * 280u / 100u;                /* MOSS: pushes the reach on, besides the night's own */
     uint32_t moss_thresh = am.moss > moss_reach ? am.moss : moss_reach;
-    uint32_t mk = am.knob[3] * 50u / 100u;                         /* MOSS: a green tint over the whole photo, 0..50 */
+    uint32_t mk = am.knob[3] * 22u / 100u;                         /* MOSS: a little green over the whole photo */
     uint32_t tr = 100u - mk + 55u * mk / 100u, tg = 100u - mk + 105u * mk / 100u, tb = 100u - mk + 50u * mk / 100u;
     uint32_t wobble_cycle = 2u * bar - am.knob[0] * bar / 100u;    /* WOBBLE: one sway, 2 bars slow .. 1 bar fast */
     uint32_t wobble_phase = (fm1_ms * 64u) / wobble_cycle;
-    uint32_t fog_phase = (fm1_ms * 64u) / 3200u;                    /* FOG: a slow drifting band, about 3.2 s a cycle */
-    uint32_t frame_hash = fm1_ms / 40u;                             /* changes about as often as the screen redraws */
+    uint32_t fog_phase = (fm1_ms * 64u) / 3200u;                    /* FOG: drifts, about 3.2 s a cycle */
+    uint32_t frame_hash = fm1_ms / 120u;                            /* the grain and the tears change 8 times a second */
     char sub[40];
     if (am.kick_ms && am_since(am.kick_ms) < 220u)
         kick = 220u - am_since(am.kick_ms);           /* 220 .. 0 ms after the kick */
@@ -378,20 +376,19 @@ static void am_draw(void)
         for (y = cv_top; y < cv_top + cv_rows && y < 240u; y++) {
             uint16_t *o = cv_px + (y - cv_top) * 240u;
             const uint8_t *p, *m;
-            int32_t shiftb = 0;
-            if (y % AM_BAND == 0u || y == cv_top) {     /* the photo's band, unpacked, and FOG's palette for it */
-                int32_t al;
-                uint32_t base_pct, fidx;
+            int32_t dx = 0, al;
+            uint32_t rng = am_hash(y + frame_hash * 977u), sy = y & grit_and;
+            if (y % AM_BAND == 0u || y == cv_top)        /* the photo's band, unpacked */
                 lz_unpack(am_pic, AM_END_LZ + AM_END_AT[y / AM_BAND], AM_BAND * 120u);
-                base_pct = y > 40u ? ((y - 40u) * 100u) / 200u : 0u;
-                if (base_pct > 100u)
-                    base_pct = 100u;
-                fidx = (((y * 290u) >> 8) + fog_phase) & 63u;
-                al = (int32_t)((base_pct * (uint32_t)am.knob[1] * 95u) / 10000u)
-                     + (12 * (int32_t)am.knob[1] * AM_SIN[fidx]) / 10000;
-                al = clamp(al, 0, 97);
-                for (i = 0; i < 16u; i++)
-                    row_pal[i] = swap16(am_fog_mix(pal_rgb[i], al));
+            /* FOG: this row's palette toward the fog, thicker lower down, drifting a little */
+            al = y > 40u ? (int32_t)((y - 40u) * am.knob[1] * 70u / 20000u) : 0;
+            al += (8 * (int32_t)am.knob[1] * AM_SIN[(((y * 290u) >> 8) + fog_phase) & 63u]) / 10000;
+            al = clamp(al, 0, 80);
+            for (i = 0; i < 16u; i++) {
+                uint16_t u = am_fog_mix(pal_rgb[i], al);
+                row_pal[i] = swap16(u);
+                row_dark[i] = swap16((uint16_t)(((u >> 1) & 0x7BEFu) + ((u >> 2) & 0x39E7u)));   /* GRIT's grain: 3/4 */
+                row_light[i] = swap16((uint16_t)(u + (((uint16_t)~u >> 3) & 0x18E3u)));         /* and an eighth to white */
             }
             if ((y / 2u) % AM_BAND == 0u && y % 2u == 0u) {   /* the moss's band (its rows are 2 screen rows each) */
                 uint32_t my = y / 2u, rows = 120u - my < AM_BAND ? 120u - my : AM_BAND;
@@ -400,36 +397,34 @@ static void am_draw(void)
                 uint32_t my = (y / 2u) / AM_BAND * AM_BAND, rows = 120u - my < AM_BAND ? 120u - my : AM_BAND;
                 lz_unpack(am_moss, AM_MOSS_LZ + AM_MOSS_AT[my / AM_BAND], rows * 60u);
             }
-            p = am_pic + (y % AM_BAND) * 120u;
+            p = am_pic + (sy % AM_BAND) * 120u;
             m = am_moss + ((y / 2u) % AM_BAND) * 60u;
-            if (am.knob[0]) {                            /* WOBBLE: this row sways sideways with the beat */
-                uint32_t widx = (((y * 201u) >> 8) + wobble_phase) & 63u;
-                int32_t rowfactor = 40 + (int32_t)y / 4;
-                int32_t dx = (12 * (int32_t)am.knob[0] * AM_SIN[widx] * rowfactor) / 1000000;
-                shiftb = dx / 2;                         /* in byte-pairs (2 screen px): keeps the fast read below */
-            }
-            if (grit_tear) {                             /* GRIT: now and then a row torn sideways */
-                uint32_t th = am_hash(y * 131u + frame_hash);
+            if (am.knob[0])                              /* WOBBLE: the row sways, up to 4 px at the bottom, less higher up */
+                dx = ((int32_t)am.knob[0] * AM_SIN[(((sy * 107u) >> 8) + wobble_phase) & 63u] * (40 + (int32_t)sy / 4)) / 250000;
+            if (grit_tear) {                             /* GRIT: now and then a pair of rows torn sideways */
+                uint32_t th = am_hash((y / 2u) * 131u + frame_hash);
                 if ((th & 0xFFu) < grit_tear)
-                    shiftb += (int32_t)((th >> 8) & 7u) - 3;
+                    dx += (int32_t)((th >> 8) % 9u) - 4;
             }
             for (x = 0; x < 240u; x += 2u) {
-                uint32_t mi = (x / 2u) & 1u ? m[x / 4u] & 15u : m[x / 4u] >> 4;
+                uint32_t mi = (x / 2u) & 1u ? m[x / 4u] & 15u : m[x / 4u] >> 4, k;
                 if (mi && moss_thresh && am_reach(x / 2u, y / 2u) < moss_thresh) {   /* the moss has reached here */
                     o[x] = o[x + 1u] = mpal[mi];
-                } else {
-                    uint32_t src2 = (uint32_t)(((int32_t)(x / 2u) - shiftb) % 120 + 120) % 120;   /* WOBBLE/tear, wrapped */
-                    uint32_t srcb = (src2 / grit_block) * grit_block;                              /* GRIT: blocky */
-                    uint8_t byte = p[srcb];
-                    uint16_t c0 = row_pal[(byte >> 4) & grit_mask], c1 = row_pal[byte & grit_mask]; /* GRIT: posterized */
-                    if (grit_speck) {                    /* GRIT: a few inverted specks, twinkling */
-                        if ((am_hash(x * 7u + y * 131u + frame_hash) & 0xFFu) < grit_speck)
-                            c0 = (uint16_t)~c0;
-                        if ((am_hash((x + 1u) * 7u + y * 131u + frame_hash) & 0xFFu) < grit_speck)
-                            c1 = (uint16_t)~c1;
+                    continue;
+                }
+                for (k = 0; k < 2u; k++) {
+                    int32_t sx = clamp((int32_t)((x + k) & grit_and) - dx, 0, 239);
+                    uint32_t ni = sx & 1 ? p[sx >> 1] & 15u : p[sx >> 1] >> 4, r;
+                    uint16_t c = row_pal[ni];
+                    if (grit_dark) {
+                        rng = rng * 1664525u + 1013904223u;
+                        r = rng >> 24;
+                        if (r < grit_dark)
+                            c = row_dark[ni];
+                        else if (r >= 256u - grit_light)
+                            c = row_light[ni];
                     }
-                    o[x] = c0;
-                    o[x + 1u] = c1;
+                    o[x + k] = c;
                 }
             }
         }
