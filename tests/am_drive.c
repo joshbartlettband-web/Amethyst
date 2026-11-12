@@ -136,8 +136,22 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     }
     shot(dir, "6-vip");
     key(4, 1); run_ms(1500); key(4, 0);
-    tap(B_LFO); run_ms(1400); shot(dir, "7-stopped");
-    tap(B_LFO); run_ms(1500);
+    btn(B_LFO, 1); run_ms(1400); shot(dir, "7-stopped");   /* step 3: LFO held is the tape stop, let go carries on */
+    btn(B_LFO, 0); run_ms(1500);
+    printf("after LFO: playing %u, punch.req %d\n", song.playing, punch.req);
+    btn(B_EDIT, 1); run_ms(2000); printf("EDIT held: break mute %d\n", trk[AM_TBREAK].p[P_MUTE]);
+    btn(B_EDIT, 0); run_ms(1000); printf("EDIT let go: break mute %d\n", trk[AM_TBREAK].p[P_MUTE]);
+    tap(B_SEQ); run_ms(2000);                          /* the break latched out: the siren alone */
+    btn(B_GLO, 1); run_ms(100); key(16, 1); run_ms(2000); shot(dir, "9-siren");
+    printf("GLO held: key 16 on track %u\n", kb_trk[16]);
+    key(16, 0); btn(B_GLO, 0); run_ms(1000);
+    tap(B_SEQ); run_ms(500);
+    tap(B_ARP); run_ms(100); key(16, 1); run_ms(600); printf("ARP once: key 16 on track %u\n", kb_trk[16]); key(16, 0);
+    tap(B_ARP); run_ms(100); key(4, 1); run_ms(600); printf("ARP twice: key 4 on track %u\n", kb_trk[4]); key(4, 0);
+    shot(dir, "10-layout");
+    tap(B_ARP); run_ms(300);
+    tap(B_HOME); run_ms(300); shot(dir, "11-notes");
+    tap(B_HOME); run_ms(300);
     { uint32_t i; for (i = 0; i < 30u; i++) { host_enc[panel.enc[EN_K4]] += 1; run_ms(30); } }   /* MOSS up */
     run_ms(4000); shot(dir, "8-moss");
     wav_header(wav, wav_frames);

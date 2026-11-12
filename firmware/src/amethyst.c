@@ -7,9 +7,11 @@
  * The first stage, FRIDAY: The End on West Central Street at 3 AM, ten years on, moss in the walls. A break runs on
  * track 4 (the DRUM engine's 909 kit, two bars of 16ths); the low white keys play a Reese on track 1 and the high
  * ones sevenths of A minor on track 2 (both Prophet programs of our own, below); the black keys hold slices of the
- * break. FX held builds (SLOOP's loops, 1/8 then 1/16 then 1/32, the bass out), and the drop lands on the next bar;
+ * break. FX held builds (SLOOP's loops, 1/8 then 1/16 then 1/32, the bass out), and the drop lands on the next beat;
  * after a drop built for a bar or more the crowd calls for a rewind, and SCL answers it. Three rewinds cut the
  * stage's VIP. The moss climbs as the night goes on and glows on every kick.
+ *   Held: ENV half speed, LFO the tape stopping, EDIT the break out, GLO a dub siren on the high keys.
+ *   Taps: SEQ the break out or in, ARP which keys play what, HOME the sleeve notes, OCT the bass's octave.
  *   main.c: am_boot() after project_boot(); each pass am_frame() instead of Melodee's UI while it returns 1.
  *   HOME and SAVE held 3 s together: full Melodee, until the next power-on. */
 
@@ -25,11 +27,12 @@
 static void project_boot(void);                        /* project.c (included after this file) */
 
 static struct {
-    uint8_t on, building, call, vip, half, stopped, rewinds, plate;
+    uint8_t on, building, call, vip, half, stopping, rewinds, plate;
+    uint8_t brk_out, cut, notes, home_combo;           /* SEQ's latch, EDIT held, the sleeve notes, HOME went to the combo */
     uint8_t knob[4];                                   /* WOBBLE FOG GRIT MOSS, 0..100 */
     int8_t oct;                                        /* the bass's octave, -2..+1 */
     uint8_t knob_show;                                 /* 1 + the knob just turned, for its bar (0: none) */
-    uint32_t combo_t0, build_t0, build_steps, call_until, rwd_t0, stop_t0, msg_t0, draw_ms, kick_ms, drop_t0, plate_t0;
+    uint32_t combo_t0, build_t0, build_steps, call_until, rwd_t0, msg_t0, draw_ms, kick_ms, drop_t0, plate_t0;
     uint32_t kicks, bar0, held, knob_show_t0;          /* held: the buttons last pass (their releases) */
     uint16_t moss;                                     /* how far the moss has reached, 0..280 (amethyst reach) */
     char msg[32];
@@ -71,6 +74,14 @@ static const uint8_t AM_PAD[][2] = {
     {P5_SUSTAIN_FILTER, 70}, {P5_RELEASE_FILTER, 90}, {P5_ATTACK_AMP, 26}, {P5_DECAY_AMP, 100},
     {P5_SUSTAIN_AMP, 118}, {P5_RELEASE_AMP, 92}, {P5_RELEASE_ON, 1}, {P5_LFO_RATE, 60}, {P5_LFO_TRI, 1},
     {P5_VINTAGE, 40}, {P5_BEND, 2},
+};
+
+/* SIREN: one pulse wave, its pitch swept up and down by the LFO (the wheel's depth is set in am_setup), the dub
+ * siren a sound system keeps beside the decks */
+static const uint8_t AM_SIREN[][2] = {
+    {P5_FREQ_A, 36}, {P5_PULSE_A, 1}, {P5_PW_A, 64}, {P5_LEVEL_A, 110}, {P5_CUTOFF, 104}, {P5_RESONANCE, 40},
+    {P5_KEY_FILTER, 1}, {P5_SUSTAIN_FILTER, 127}, {P5_SUSTAIN_AMP, 127}, {P5_RELEASE_AMP, 60}, {P5_RELEASE_ON, 1},
+    {P5_LFO_RATE, 58}, {P5_LFO_TRI, 1}, {P5_WHEEL_FREQ_A, 1}, {P5_BEND, 2},
 };
 
 /* FRIDAY's break: two bars of 16ths, a roller in the style of the 2000s (our own pattern). Lanes: k the kick,
@@ -115,8 +126,10 @@ static void am_knobs(void)                              /* the four knobs onto t
 
 static void am_setup(void)                              /* the stage's tracks, tempo and break */
 {
-    track_t *b = &trk[AM_TBASS], *c = &trk[AM_TCHORD], *d = &trk[AM_TBREAK];
+    track_t *b = &trk[AM_TBASS], *c = &trk[AM_TCHORD], *d = &trk[AM_TBREAK], *n = &trk[AM_TSIREN];
     undo_depth++;
+    set_engine_of(n, ENGI_PROPHET);
+    apply_preset_to(n, 0);
     set_engine_of(b, ENGI_PROPHET);
     apply_preset_to(b, 0);
     set_engine_of(c, ENGI_PROPHET);
@@ -130,6 +143,10 @@ static void am_setup(void)                              /* the stage's tracks, t
     p5_track_accept(b);
     am_p5(p5_patch_of(c), AM_PAD, NELEM(AM_PAD), "FOG PAD");
     p5_track_accept(c);
+    am_p5(p5_patch_of(n), AM_SIREN, NELEM(AM_SIREN), "SIREN");
+    p5_track_accept(n);
+    n->mw = 46;                                         /* how far the siren sweeps */
+    n->p[P_VOICE] = 2;                                  /* one note at a time */
     b->p[P_VOICE] = 2;                                  /* LEG: one note, sliding */
     b->p[P_TRANS] = -12;
     c->p[P_CHRD] = 2;                                   /* DIA7: each key a seventh of the scale */
@@ -137,7 +154,7 @@ static void am_setup(void)                              /* the stage's tracks, t
     c->p[P_SCALE] = 2;                                  /* MIN */
     c->p[P_VOIC] = 1;                                   /* OPEN */
     b->p[P_MUTE] = c->p[P_MUTE] = d->p[P_MUTE] = 0;
-    trk[2].p[P_MUTE] = 1;                               /* (track 3 rests) */
+    n->p[P_MUTE] = 1;                                   /* (the siren rests until GLO) */
     fm1_irq_on();
     am_break_load(0);
     song.g[G_BPM] = 174;
@@ -157,7 +174,7 @@ static uint32_t am_bar_ms(void) { return 240000u / (uint32_t)(song.g[G_BPM] > 40
 static void am_build(uint32_t on)
 {
     if (on) {
-        if (am.rwd_t0 || am.stop_t0)
+        if (am.rwd_t0 || am.stopping)
             return;
         if (!song.playing) {                            /* nothing is building if nothing is playing */
             am_say("PRESS PLAY FIRST");
@@ -190,23 +207,13 @@ static void am_rewind(void)
     am.rwd_t0 = fm1_ms | 1u;
     am_say("PULL UP!");
 }
-static void am_stop(void)
-{
-    if (am.stopped || !song.playing) {                  /* stopped: again from the top */
-        am.stopped = 0;
-        punch.req = -1;
-        transport_req = 1;
-        am_say("FROM THE TOP");
-        return;
-    }
-    punch.req = PX_STOP;                                /* the tape slows to nothing */
-    am.stop_t0 = fm1_ms | 1u;
-}
 static void am_poll(void)
 {
     uint32_t bar = am_bar_ms();
     if (punch.keybit != AM_PKEY)                        /* (also after Melodee resets its effects) */
         punch.keybit = AM_PKEY;
+    kb_mask = kb_lock = 0;                              /* a held button never takes the keys for one of Melodee's */
+    punch_panel_mask = punch_panel_lock = 0;            /* layers: with GLO held they play the siren */
     if (am.building) {                                  /* the loops get shorter every 4 beats: 1/8, 1/16, 1/32 */
         uint32_t beats = am_seq.bstep / 4u;
         int8_t want = beats < 4u ? PX_LOOP8 : beats < 8u ? PX_LOOP16 : PX_LOOP32;
@@ -237,13 +244,6 @@ static void am_poll(void)
             am_say("DUBPLATE CUT: FRIDAY VIP");
         } else
             am_say("COME AGAIN");
-    }
-    if (am.stop_t0 && am_since(am.stop_t0) >= 900u) {    /* the tape stopped: the transport too */
-        am.stop_t0 = 0;
-        punch.req = -1;
-        transport_req = 2;
-        am.stopped = 1;
-        am_say("STOPPED. LFO: FROM THE TOP");
     }
     if (am_seq.kicks != am.kicks) {                     /* a kick: the screen's pulse */
         am.kicks = am_seq.kicks;
@@ -458,7 +458,17 @@ static void am_draw(void)
             cv_text_c(120, ty_y(140, TY_LB), TY_LB, "FRIDAY", RGB(40, 30, 110), RGB(236, 228, 210));
             cv_text_c(120, ty_y(162, TY_TX), TY_TX, "VIP", RGB(216, 48, 60), RGB(236, 228, 210));
         }
-        if (am.building) {                              /* the build meter: three beats a segment, 1/8 1/16 1/32 */
+        if (am.notes) {                                 /* the sleeve notes: where FRIDAY comes from */
+            static const char *const N[10] = {
+                "FABRIC OPENED IN 1999", "AND KEPT FRIDAYS FOR", "DRUM AND BASS: DJ HYPE'S", "PLAYAZ. MAY 2001: VALVE,",
+                "DILLINJA AND LEMON D'S", "SOUND SYSTEM, 52 SUBS.", "THE END, WEST CENTRAL", "STREET, CLOSED IN 2009.",
+                "PHOTO: steve_w, CC BY 2.0,", "CHANGED WITH GEMINI",
+            };
+            cv_rect(0, 66, 240, 174, RGB(12, 10, 10));
+            for (i = 0; i < 10u; i++)
+                cv_text_c(120, ty_y(76 + (int32_t)i * 17, TY_LB), TY_LB, N[i], i >= 8u ? RGB(150, 140, 160) : RGB(214, 196, 160),
+                          RGB(12, 10, 10));
+        } else if (am.building) {                       /* the build meter: three beats a segment, 1/8 1/16 1/32 */
             uint32_t seg = am_seq.bstep / 16u, fill;
             if (seg > 2u)
                 seg = 2u;
@@ -491,7 +501,8 @@ static void am_draw(void)
 
 static void am_leds(void)
 {
-    static const uint8_t USED[] = {B_FX, B_SCL, B_ENV, B_LFO, B_HOME, B_SAVE, B_OCTDN, B_OCTUP, B_PLAY, B_SEQ};
+    static const uint8_t USED[] = {B_FX, B_SCL, B_ENV, B_LFO, B_EDIT, B_GLO, B_HOME, B_SAVE, B_ARP, B_OCTDN, B_OCTUP,
+                                   B_PLAY, B_SEQ};
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0};
     uint32_t k, c, blink = (fm1_ms / 160u) & 1u;
     for (k = 0; k < 27u; k++) {
@@ -504,6 +515,11 @@ static void am_leds(void)
     led_put(nl, panel.btn[B_FX], am.building);
     led_put(nl, panel.btn[B_SCL], am.call && blink);
     led_put(nl, panel.btn[B_ENV], am.half);
+    led_put(nl, panel.btn[B_LFO], am.stopping);
+    led_put(nl, panel.btn[B_EDIT], am.cut);
+    led_put(nl, panel.btn[B_GLO], am_seq.siren);
+    led_put(nl, panel.btn[B_ARP], am_seq.layout != 0u);
+    led_put(nl, panel.btn[B_HOME], am.notes);
     led_put(nl, panel.btn[B_SEQ], !trk[AM_TBREAK].p[P_MUTE]);
     led_put(nl, panel.btn[B_OCTDN], am.oct < 0);
     led_put(nl, panel.btn[B_OCTUP], am.oct > 0);
@@ -539,7 +555,7 @@ static void am_leave(void)
     uint32_t i;
     am.on = 0;
     am_seq.on = 0;
-    am_seq.chop = am_seq.drop = am_seq.building = 0;
+    am_seq.chop = am_seq.drop = am_seq.building = am_seq.siren = am_seq.layout = 0;
     punch.req = -1;
     punch.keybit = 0;
     transport_req = 2;
@@ -570,6 +586,7 @@ static int am_frame(void)
     both = AM_BTN(B_HOME) | AM_BTN(B_SAVE);
     if ((fm1_in.buttons & both) == both) {              /* HOME + SAVE held: the countdown, then Melodee */
         int32_t held = (int32_t)(fm1_ms - am.combo_t0);
+        am.home_combo = 1;
         if (!am.combo_t0)
             am.combo_t0 = fm1_ms | 1u;
         else if (held >= (int32_t)AM_HOLD_MS) {
@@ -592,7 +609,7 @@ static int am_frame(void)
         am_build(0);
     if (pressed & AM_BTN(B_SCL))
         am_rewind();
-    if ((pressed & AM_BTN(B_ENV)) && !am.building && !am.rwd_t0 && !am.stop_t0) {
+    if ((pressed & AM_BTN(B_ENV)) && !am.building && !am.rwd_t0 && !am.stopping) {
         am.half = 1;                                    /* HALF: SLOOP's half speed, while ENV is held (kept on, */
         punch.req = PX_HALF;                            /* it runs out of the 0.37 s it replays and falls quiet) */
         am_say("HALF SPEED");
@@ -602,15 +619,47 @@ static int am_frame(void)
         if (punch.req == PX_HALF)
             punch.req = -1;
     }
-    if (pressed & AM_BTN(B_LFO))
-        am_stop();
-    if (pressed & AM_BTN(B_PLAY)) {
-        transport_req = song.playing ? 2u : 1u;
-        am.stopped = 0;
+    if ((pressed & AM_BTN(B_LFO)) && !am.building && !am.rwd_t0 && !am.half) {
+        am.stopping = 1;                                /* STOP: the tape slows to nothing while LFO is held */
+        punch.req = PX_STOP;
+        am_say("TAPE STOP");
     }
-    if (pressed & AM_BTN(B_SEQ)) {                      /* the break out and back */
-        trk[AM_TBREAK].p[P_MUTE] ^= 1;
-        am_say(trk[AM_TBREAK].p[P_MUTE] ? "BREAK OUT" : "BREAK IN");
+    if ((released & AM_BTN(B_LFO)) && am.stopping) {    /* let go: the tune carries on where it would have been */
+        am.stopping = 0;
+        if (punch.req == PX_STOP)
+            punch.req = -1;
+    }
+    if (pressed & AM_BTN(B_PLAY))
+        transport_req = song.playing ? 2u : 1u;
+    if (pressed & AM_BTN(B_SEQ)) {                      /* the break out and back: SEQ latches, EDIT while held */
+        am.brk_out ^= 1;
+        am_say(am.brk_out ? "BREAK OUT" : "BREAK IN");
+    }
+    if (pressed & AM_BTN(B_EDIT)) {
+        am.cut = 1;
+        am_say("BREAK OUT");
+    }
+    if (released & AM_BTN(B_EDIT))
+        am.cut = 0;
+    trk[AM_TBREAK].p[P_MUTE] = (int16_t)(am.brk_out || am.cut);
+    if (pressed & AM_BTN(B_GLO)) {                      /* the siren on the high keys while GLO is held */
+        am_seq.siren = 1;
+        trk[AM_TSIREN].p[P_MUTE] = 0;
+        am_say("SIREN: THE HIGH KEYS");
+    }
+    if (released & AM_BTN(B_GLO)) {
+        am_seq.siren = 0;
+        trk[AM_TSIREN].p[P_MUTE] = 1;
+    }
+    if (pressed & AM_BTN(B_ARP)) {                      /* which keys play what */
+        static const char *const L[3] = {"KEYS: BASS AND CHORDS", "KEYS: ALL BASS", "KEYS: ALL CHORDS"};
+        am_seq.layout = (uint8_t)((am_seq.layout + 1u) % 3u);
+        am_say(L[am_seq.layout]);
+    }
+    if (released & AM_BTN(B_HOME)) {                    /* HOME tapped (not held with SAVE): the sleeve notes */
+        if (!am.home_combo)
+            am.notes ^= 1;
+        am.home_combo = 0;
     }
     for (i = 0; i < 2u; i++)                            /* OCT- / OCT+: the bass an octave down or up */
         if (pressed & AM_BTN(i ? B_OCTUP : B_OCTDN)) {

@@ -852,7 +852,7 @@ static void keyboard_block(void)
                     kb_layer |= 1u << k;
                     continue;
                 }
-                kb_trk[k] = k < 12u ? AM_TBASS : AM_TCHORD;
+                kb_trk[k] = (uint8_t)am_key_track(k);
             }
             if (kb_asleep) { kb_note[k]=KB_SILENT; continue; }
             if ((fm1_in.buttons & punch_panel_mask) || punch_panel_lock) {

@@ -24,15 +24,19 @@ One stage is built, FRIDAY at The End:
 | White keys F3..E4 (key index 0..11) | Reese bass, track 1 (`AM_TBASS` 0), Prophet program REESE, legato, -12 |
 | White keys F4..G5 (index 12..26) | Sevenths of A minor, track 2 (`AM_TCHORD` 1), Prophet FOG PAD, Melodee chord keys DIA7 |
 | Black keys (11) | Hold a slice of the break (two 16ths repeating); release returns to where the bar would be |
-| FX held | BUILD: SLOOP loops 1/8, 1/16, 1/32 by time held, bass muted; release: drop on next bar |
+| FX held | BUILD: SLOOP loops 1/8, 1/16, 1/32, four beats each, bass muted, a meter on screen; release: drop on the next beat |
 | SCL | REWIND when the crowd calls (after a build of a bar or more); 3 rewinds cut the VIP break |
 | ENV held | SLOOP half speed |
-| LFO tap | Tape stop then transport stop; tap again: from the top |
+| LFO held | Tape stop (`PX_STOP`); let go and the tune carries on |
+| EDIT held | Break muted while held |
+| GLO held | Dub siren on the high white keys, track 3 (`AM_TSIREN` 2), Prophet program SIREN |
 | SEQ | Break mute toggle |
+| ARP | Key layout: bass and chords / all bass / all chords (`am_seq.layout`) |
+| HOME tap | Sleeve notes on and off |
 | PLAY | Start / stop |
 | OCT- / OCT+ | Bass octave |
 | SELECT | Tempo 140..180 |
-| K1..K4 | WOBBLE, FOG, GRIT, MOSS (0..100): weak today, see step 2 |
+| K1..K4 | WOBBLE, FOG, GRIT, MOSS (0..100): each changes the sound and the picture, a bar on screen while it turns |
 | HOME + SAVE 3 s | Leave to full Melodee (`am_leave`) |
 
 The break is track 4 (`AM_TBREAK` 3): DRUM engine, 909 kit, 32 steps, patterns in `AM_FRIDAY[2]` (normal, VIP).
@@ -155,6 +159,9 @@ In `am_draw`, per row, all cheap:
 - Check: shots at 0 and 100 for each knob; they must be plainly different from each other.
 
 ### Step 3. The rest of the top row and bottom row
+Done, as are steps 1 and 2 (step 2 twice: Josh found the first knob looks overcooked, so GRIT is grain, blocks
+and a few torn rows now, FOG is per row, WOBBLE sways 4 px at most). One trap found: Melodee's `kb_mask` and
+`punch_panel_mask` make a key pressed with a button held silent; `am_poll` clears them every pass. Step 4 is next.
 - **LFO held**: `PX_STOP` while held; on release clear it and carry on (no transport stop). Remove the tap logic.
 - **EDIT held**: break muted while held (`trk[AM_TBREAK].p[P_MUTE]`), restore on release. SEQ stays the latch.
 - **GLO held**: dub siren. Simplest: track 3 (index 2, currently muted) gets its own Prophet program (pulse,
