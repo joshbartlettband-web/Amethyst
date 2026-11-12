@@ -28,6 +28,7 @@ static void project_boot(void);                        /* project.c (included af
 
 static struct {
     uint8_t on, building, call, vip, half, stopping, rewinds, plate;
+    uint8_t pat, pat_now;                              /* the break ALGORITHM chose, and the one loaded */
     uint8_t brk_out, cut, notes, home_combo;           /* SEQ's latch, EDIT held, the sleeve notes, HOME went to the combo */
     uint8_t knob[4];                                   /* WOBBLE FOG GRIT MOSS, 0..100 */
     int8_t oct;                                        /* the bass's octave, -2..+1 */
@@ -84,19 +85,28 @@ static const uint8_t AM_SIREN[][2] = {
     {P5_LFO_RATE, 58}, {P5_LFO_TRI, 1}, {P5_WHEEL_FREQ_A, 1}, {P5_BEND, 2},
 };
 
-/* FRIDAY's break: two bars of 16ths, a roller in the style of the 2000s (our own pattern). Lanes: k the kick,
- * s the snare (x accented, o plain, - a rim ghost), h the closed hat (O: open), g ghosts on the rim. The VIP is
- * the same night with the kick doubled and the snare busier. */
-typedef struct { const char *k, *s, *h, *g; } am_break_t;
-static const am_break_t AM_FRIDAY[2] = {
-    {"x.........x.......x.......x.....", "....x.......x.......x.....o.x...",
+/* The breaks: two bars of 16ths each, our own patterns, a detent of ALGORITHM apiece. Lanes: k the kick, s the snare
+ * (x accented, o plain, - a rim ghost), h the closed hat (O: open), g ghosts on the rim. ROLLER is the 2000s roller
+ * FRIDAY starts on; CHOPPED leans on the Amen's shape (two kicks, the snare late and doubled); HALF TIME puts the
+ * kick on 1 and the snare on 3; TWO-STEP is the plain kick, snare, kick, snare. The VIP is the roller with the kick
+ * doubled and the snare busier. */
+typedef struct { const char *name, *k, *s, *h, *g; } am_break_t;
+#define AM_NBREAK 4u
+static const am_break_t AM_BREAKS[AM_NBREAK + 1u] = {
+    {"ROLLER", "x.........x.......x.......x.....", "....x.......x.......x.....o.x...",
      "..x...x...x...O...x...x...x...O.", "...-.....-...-.....-.....-...-.."},
-    {"x.........x..x....x.......x..x..", "....x...-...x.......x...-...x..x",
+    {"CHOPPED", "x.x.......xx....x.x.......x.....", "....x..o.o..x..o....x..o.o....x.",
+     "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.O.", "................................"},
+    {"HALF TIME", "x...............x.....x.........", "........x...............x.......",
+     "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.O.", "......-.......-.......-......-.."},
+    {"TWO-STEP", "x.........x.....x.........x.....", "....x.......x.......x.......x...",
+     "x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.", "................................"},
+    {"ROLLER VIP", "x.........x..x....x.......x..x..", "....x...-...x.......x...-...x..x",
      "..x.x.x...x.x.O...x.x.x...x.x.O.", "...-.....-...-.....-.....-...-.."},
 };
-static void am_break_load(uint32_t vip)
+static void am_break_load(void)                         /* the break ALGORITHM is on (the roller's VIP once it is cut) */
 {
-    const am_break_t *b = &AM_FRIDAY[vip ? 1 : 0];
+    const am_break_t *b = &AM_BREAKS[am.vip && !am.pat ? AM_NBREAK : am.pat];
     track_t *t = &trk[AM_TBREAK];
     uint32_t i;
     track_defaults_steps(t);
@@ -109,6 +119,7 @@ static void am_break_load(uint32_t vip)
         if (b->h[i] == 'O') grid_hit(t, i, 4, 1);
     }
     t->p[P_SLEN] = 32;
+    am.pat_now = am.pat;
 }
 
 static void am_knobs(void)                              /* the four knobs onto the sounds */
@@ -156,7 +167,7 @@ static void am_setup(void)                              /* the stage's tracks, t
     b->p[P_MUTE] = c->p[P_MUTE] = d->p[P_MUTE] = 0;
     n->p[P_MUTE] = 1;                                   /* (the siren rests until GLO) */
     fm1_irq_on();
-    am_break_load(0);
+    am_break_load();
     song.g[G_BPM] = 174;
     am_knobs();
 }
@@ -239,12 +250,14 @@ static void am_poll(void)
         am.drop_t0 = fm1_ms | 1u;
         if (++am.rewinds == 3u && !am.vip) {            /* three: the stage's VIP is cut */
             am.vip = 1;
-            am_break_load(1);
+            am_break_load();
             am.plate_t0 = fm1_ms | 1u;
             am_say("DUBPLATE CUT: FRIDAY VIP");
         } else
             am_say("COME AGAIN");
     }
+    if (am.pat != am.pat_now && (!song.playing || am_seq.ghost % 16u == 0u))   /* a new break: on the next bar */
+        am_break_load();
     if (am_seq.kicks != am.kicks) {                     /* a kick: the screen's pulse */
         am.kicks = am_seq.kicks;
         am.kick_ms = fm1_ms | 1u;
@@ -676,7 +689,12 @@ static int am_frame(void)
     }
     if (fm1_enc_take(panel.enc[EN_PRESET]) != 0)
         am_say("ONE STAGE SO FAR: FRIDAY");
-    (void)fm1_enc_take(panel.enc[EN_ALGO]);
+    if ((s = fm1_enc_take(panel.enc[EN_ALGO]) * panel.dir[EN_ALGO]) != 0) {   /* ALGORITHM: the break, a detent each */
+        char m[24] = "BREAK: ";
+        am.pat = (uint8_t)((am.pat + (s > 0 ? 1u : AM_NBREAK - 1u)) % AM_NBREAK);
+        str_cpy(m + 7, AM_BREAKS[am.vip && !am.pat ? AM_NBREAK : am.pat].name, sizeof m - 7u);
+        am_say(m);
+    }
     for (i = 0; i < 4u; i++)                            /* the four knobs, 2 % a detent */
         if ((s = fm1_enc_take(panel.enc[EN_K1 + i]) * panel.dir[EN_K1 + i]) != 0) {
             static const char *const N[4] = {"WOBBLE ", "FOG ", "GRIT ", "MOSS "};

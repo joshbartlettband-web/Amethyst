@@ -150,6 +150,12 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     tap(B_ARP); run_ms(100); key(4, 1); run_ms(600); printf("ARP twice: key 4 on track %u\n", kb_trk[4]); key(4, 0);
     shot(dir, "10-layout");
     tap(B_ARP); run_ms(300);
+    { uint32_t i, k0; for (i = 0; i < 4u; i++) {          /* step 4: ALGORITHM, a break a detent, loaded on the next bar */
+        host_enc[panel.enc[EN_ALGO]] += panel.dir[EN_ALGO]; run_ms(1500);
+        k0 = am_seq.kicks; run_ms(8u * beat_ms());
+        printf("ALGORITHM: break %u loaded (%s), %u kicks in two bars\n", am.pat_now,
+               AM_BREAKS[am.vip && !am.pat_now ? AM_NBREAK : am.pat_now].name, am_seq.kicks - k0);
+    } }
     tap(B_HOME); run_ms(300); shot(dir, "11-notes");
     tap(B_HOME); run_ms(300);
     { uint32_t i; for (i = 0; i < 30u; i++) { host_enc[panel.enc[EN_K4]] += 1; run_ms(30); } }   /* MOSS up */
