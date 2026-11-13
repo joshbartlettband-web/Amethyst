@@ -160,6 +160,28 @@ __attribute__((constructor)) static void am_drive(int argc, char **argv)   /* (b
     tap(B_HOME); run_ms(300);
     { uint32_t i; for (i = 0; i < 30u; i++) { host_enc[panel.enc[EN_K4]] += 1; run_ms(30); } }   /* MOSS up */
     run_ms(4000); shot(dir, "8-moss");
+    {   /* step 5: REC a bass take (waits for the loop to come round, one pass of four bars), then it plays by itself */
+        uint32_t waited = 0, i, hits = 0;
+        key(4, 1); run_ms(200); key(4, 0);             /* the bass was the side last played */
+        tap(B_REC); run_ms(200);
+        printf("REC tapped: rec %u trk %u song.rec %u wait %u (%s)\n", am.rec, am.rec_trk, song.rec, song.rec_wait, am.msg);
+        while ((song.rec_wait & 1u) && waited < 7000u) { run_ms(20); waited += 20; }
+        printf("rolling after %u ms (%s)\n", waited, am.msg);
+        key(4, 1); run_ms(700); shot(dir, "15-rec"); key(4, 0); run_ms(300); key(2, 1); run_ms(900); key(2, 0);
+        run_ms(600); key(7, 1); run_ms(1200); key(7, 0);
+        waited = 0;
+        while (am.rec && waited < 7000u) { run_ms(20); waited += 20; }
+        for (i = 0; i < 64u; i++) hits += trk[AM_TBASS].step[i].flags & SF_RECORDED ? 1u : 0u;
+        printf("take done after %u ms more: rec %u song.rec %u, %u recorded steps (%s)\n", waited, am.rec, song.rec, hits, am.msg);
+        tap(B_SEQ); run_ms(6000); tap(B_SEQ);          /* the break out: only the loop should sound */
+        printf("^ the six seconds above: the bass loop alone\n");
+        btn(B_REC, 1); run_ms(900); shot(dir, "16-tape"); btn(B_REC, 0); run_ms(200);
+        printf("after REC held: rec %u, tape %u\n", am.rec, am.tape);
+        am_shout(); run_ms(300); shot(dir, "17-shout"); run_ms(5200);
+        tap(B_REC); run_ms(300); tap(B_REC); run_ms(300);
+        hits = 0; for (i = 0; i < 64u; i++) hits += trk[AM_TBASS].step[i].flags & SF_RECORDED ? 1u : 0u;
+        printf("REC twice: %s, %u recorded steps\n", am.msg, hits);
+    }
     host_enc[panel.enc[EN_PRESET]] += panel.dir[EN_PRESET]; run_ms(1500); shot(dir, "12-turnmills");   /* step 4: stage 2 */
     printf("stage %u: %s at %s, %d BPM, break %u, vip %u, playing %u\n", am.stage, AM_STAGE->night, AM_STAGE->venue,
            song.g[G_BPM], am.pat_now, am.vip, song.playing);

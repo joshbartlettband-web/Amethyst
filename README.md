@@ -13,7 +13,8 @@ between them. FRIDAY's break runs at 174; the low white keys
 play a Reese, the high ones sevenths of A minor, the black keys chop the break. Hold FX to build, let go to drop;
 after a good drop the crowd calls for a rewind, and SCL answers it. Three rewinds cut the stage's VIP. Held, ENV is
 half speed, LFO a tape stop, EDIT the break out, and GLO a dub siren on the high keys. SEQ takes the break out and
-brings it back, ARP changes which keys play what, HOME shows the sleeve notes, ALGORITHM picks the break (ROLLER, CHOPPED, HALF TIME, TWO-STEP), SELECT is the tempo, OCT- and OCT+
+brings it back, ARP changes which keys play what, REC records four bars of bass or
+chords and loops them (held, it shows the night's tape pack), HOME shows the sleeve notes, ALGORITHM picks the break (ROLLER, CHOPPED, HALF TIME, TWO-STEP), SELECT is the tempo, OCT- and OCT+
 the bass's octave, the four knobs WOBBLE, FOG, GRIT and MOSS. HOME and SAVE held 3 seconds open the full Melodee. Amethyst's code is
 `firmware/src/amethyst.c` and `amethyst_seq.h`.
 

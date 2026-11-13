@@ -20,6 +20,7 @@ static struct {
     volatile uint8_t building;    /* amethyst.c: FX is held, so bstep counts 16ths since it was pressed */
     volatile uint8_t siren;       /* GLO is held: the high keys play the siren (track 3) */
     volatile uint8_t layout;      /* ARP: 0 the low keys bass and the high chords, 1 all bass, 2 all chords */
+    volatile uint8_t last;        /* the track the last white key played (REC records that side) */
     uint8_t cn;                   /* the held slice's 16ths so far */
     uint16_t ghost;               /* the break's step without the chop */
     volatile uint16_t bstep;      /* 16ths since BUILD started (amethyst.c reads it for the loop length and meter) */
@@ -31,6 +32,7 @@ static uint32_t am_key_track(uint32_t k)                 /* the track a white ke
 {
     if (am_seq.siren && k >= 12u)
         return AM_TSIREN;
-    return am_seq.layout == 1u ? AM_TBASS : am_seq.layout == 2u ? AM_TCHORD : k < 12u ? AM_TBASS : AM_TCHORD;
+    am_seq.last = (uint8_t)(am_seq.layout == 1u ? AM_TBASS : am_seq.layout == 2u ? AM_TCHORD : k < 12u ? AM_TBASS : AM_TCHORD);
+    return am_seq.last;
 }
 static void am_seq_step(track_t *t, uint32_t starting, uint32_t len);   /* amethyst.c */

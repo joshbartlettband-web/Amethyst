@@ -12,6 +12,9 @@
  * stage's VIP. The moss climbs as the night goes on and glows on every kick.
  *   Held: ENV half speed, LFO the tape stopping, EDIT the break out, GLO a dub siren on the high keys.
  *   Taps: SEQ the break out or in, ARP which keys play what, HOME the sleeve notes, OCT the bass's octave.
+ *   REC: four bars of the side you last played (bass or chords), from the next time its loop comes round, then it
+ *   loops; again adds a layer; again during a take wipes that side. REC held: the tape pack, tonight on a card.
+ *   Now and then a shout-out arrives on a phone, the way listeners texted the pirates.
  *   main.c: am_boot() after project_boot(); each pass am_frame() instead of Melodee's UI while it returns 1.
  *   HOME and SAVE held 3 s together: full Melodee, until the next power-on. */
 
@@ -24,10 +27,15 @@
 #define AM_PKEY (1u << 31)
 #include "am_art.h"                                    /* AM_END_*, AM_MILLS_*, AM_MOSS_* (tools/amethyst/gen_am_art.py) */
 
+static uint32_t am_hash(uint32_t x);
 static void project_boot(void);                        /* project.c (included after this file) */
 
 static struct {
     uint8_t on, building, call, vip, half, stopping, rewinds, plate;
+    uint8_t rec, rec_trk, tape, shout;                 /* a take armed or rolling and its track; the tape pack; 1 + the shout-out */
+    uint8_t played, vips;                              /* bits: the stages played and the VIPs cut tonight */
+    uint16_t rwd_all, bars;                            /* rewinds and bars played tonight */
+    uint32_t rec_t0, shout_t0;
     uint8_t stage;                                     /* AM_STAGES[]: PRESETS */
     uint8_t pat, pat_now;                              /* the break ALGORITHM chose, and the one loaded */
     uint8_t brk_out, cut, notes, home_combo;           /* SEQ's latch, EDIT held, the sleeve notes, HOME went to the combo */
@@ -208,6 +216,11 @@ static void am_setup(void)                              /* the stage's tracks, t
     b->p[P_MUTE] = c->p[P_MUTE] = d->p[P_MUTE] = 0;
     n->p[P_MUTE] = 1;                                   /* (the siren rests until GLO) */
     fm1_irq_on();
+    track_defaults_steps(b);                            /* no loops yet: four bars of 16ths each to record into */
+    track_defaults_steps(c);
+    b->p[P_SLEN] = c->p[P_SLEN] = 64;
+    am.rec = 0;
+    am.played |= (uint8_t)(1u << am.stage % NELEM(AM_STAGES));
     am.pat = st->pat;
     am.vip = am.rewinds = am.call = am.brk_out = 0;      /* each stage earns its own VIP */
     am.oct = 0;
@@ -263,9 +276,61 @@ static void am_rewind(void)
     am.rwd_t0 = fm1_ms | 1u;
     am_say("PULL UP!");
 }
+/* REC tapped. Melodee's own recorder does the work (seq.c rec_set): armed, it waits for the track's loop to come
+ * round, records one pass of what is played, and lets go. */
+static void am_rec(void)
+{
+    track_t *t;
+    if (!song.playing) {
+        am_say("PRESS PLAY FIRST");
+        return;
+    }
+    fm1_irq_off();
+    if (am.rec) {                                       /* a take armed or rolling: scrapped, and that side's loop wiped */
+        t = &trk[am.rec_trk];
+        rec_set(t, 0);
+        track_defaults_steps(t);
+        t->p[P_SLEN] = 64;
+        am.rec = 0;
+        am_say(am.rec_trk == AM_TBASS ? "BASS LOOP WIPED" : "CHORD LOOP WIPED");
+    } else {
+        am.rec_trk = am_seq.last == AM_TCHORD ? AM_TCHORD : AM_TBASS;
+        rec_set(&trk[am.rec_trk], 1);
+        am.rec = 1;
+    }
+    fm1_irq_on();
+}
+static const char *const AM_SHOUTS[][2] = {              /* made-up people, real postcodes */
+    {"BIG UP THE", "E8 LOT"}, {"REWIND", "THAT!"}, {"SE15 MASSIVE", "LOCKED IN"}, {"N16 CREW", "HOLD TIGHT"},
+    {"SHOUT TO", "NAN IN E17"}, {"TUNE!", "WHO IS THIS"}, {"E3 TO SW9", "WE HEAR YOU"}, {"NIGHT BUS", "CREW SAYS HI"},
+};
+static void am_shout(void)
+{
+    am.shout = (uint8_t)(1u + am_hash(fm1_ms) % NELEM(AM_SHOUTS));
+    am.shout_t0 = fm1_ms | 1u;
+}
 static void am_poll(void)
 {
     uint32_t bar = am_bar_ms();
+    if (am.rec) {                                       /* the take: waiting for the one, rolling, or done */
+        uint32_t bit = 1u << am.rec_trk, idx = trk[am.rec_trk].seq_idx;
+        char m[32];
+        str_cpy(m, am.rec_trk == AM_TBASS ? "BASS" : "CHORDS", sizeof m);
+        if (!(song.rec & bit)) {
+            am.rec = 0;
+            str_cpy(m + str_len(m), song.playing ? " LOOP DOWN" : " TAKE STOPPED", 14);
+        } else if (song.rec_wait & bit) {
+            str_cpy(m + str_len(m), ": REC IN ", 10);
+            fmt_int(m + str_len(m), (int32_t)((64u - idx + 3u) / 4u));
+        } else {
+            str_cpy(m + str_len(m), ": REC, BAR ", 12);
+            fmt_int(m + str_len(m), (int32_t)(idx / 16u + 1u));
+            str_cpy(m + str_len(m), " OF 4", 6);
+        }
+        am_say(m);
+    }
+    if (am.shout && am_since(am.shout_t0) > 5000u)
+        am.shout = 0;
     if (punch.keybit != AM_PKEY)                        /* (also after Melodee resets its effects) */
         punch.keybit = AM_PKEY;
     kb_mask = kb_lock = 0;                              /* a held button never takes the keys for one of Melodee's */
@@ -293,8 +358,11 @@ static void am_poll(void)
         punch.req = -1;
         transport_req = 3;
         am.drop_t0 = fm1_ms | 1u;
+        am.rwd_all++;
+        am_shout();
         if (++am.rewinds == 3u && !am.vip) {            /* three: the stage's VIP is cut */
             am.vip = 1;
+            am.vips |= (uint8_t)(1u << am.stage % NELEM(AM_STAGES));
             am_break_load();
             am.plate_t0 = fm1_ms | 1u;
             {
@@ -314,6 +382,8 @@ static void am_poll(void)
     }
     if (song.playing && fm1_ms - am.bar0 >= bar) {      /* the moss climbs a little each bar (MOSS: faster) */
         am.bar0 = fm1_ms;
+        if (++am.bars % 16u == 8u)                      /* a shout-out every 16 bars */
+            am_shout();
         if (am.moss < 280u)
             am.moss = (uint16_t)(am.moss + 2u + am.knob[3] / 20u);
     }
@@ -526,7 +596,45 @@ static void am_draw(void)
             cv_text_c(120, ty_y(140, TY_LB), TY_LB, st->night, RGB(40, 30, 110), RGB(236, 228, 210));
             cv_text_c(120, ty_y(162, TY_TX), TY_TX, "VIP", RGB(216, 48, 60), RGB(236, 228, 210));
         }
-        if (am.notes) {                                 /* the sleeve notes: where the night comes from */
+        if (am.shout && !am.call && !am.notes && !am.tape && !(am.plate_t0 && am_since(am.plate_t0) < 3500u)) {
+            uint16_t lcd = RGB(150, 182, 82), ink = RGB(24, 34, 16);   /* a shout-out: a text on a phone in the corner */
+            cv_rect(104, 134, 132, 66, RGB(12, 10, 10));
+            cv_rect(106, 136, 128, 62, RGB(60, 60, 70));
+            cv_rect(112, 141, 116, 46, lcd);
+            cv_rect(160, 190, 20, 4, RGB(12, 10, 10));
+            cv_text_c(170, ty_y(154, TY_LB), TY_LB, AM_SHOUTS[am.shout - 1u][0], ink, lcd);
+            cv_text_c(170, ty_y(174, TY_LB), TY_LB, AM_SHOUTS[am.shout - 1u][1], ink, lcd);
+        }
+        if (am.tape) {                                  /* the tape pack: tonight, as the cover of a cassette box */
+            uint32_t secs = fm1_ms / 1000u, n = 0;
+            uint16_t bg = RGB(12, 10, 10), hi = RGB(226, 140, 48), tx = RGB(214, 196, 160);
+            char m[40];
+            cv_rect(0, 66, 240, 174, bg);
+            cv_rect(8, 72, 224, 2, hi);
+            cv_text_c(120, ty_y(92, TY_TX), TY_TX, "TAPE PACK", hi, bg);
+            m[0] = 0;
+            for (i = 0; i < NELEM(AM_STAGES); i++)
+                if ((am.played >> i) & 1u) {
+                    if (n++)
+                        str_cpy(m + str_len(m), " + ", 4);
+                    str_cpy(m + str_len(m), AM_STAGES[i].night, sizeof m - str_len(m));
+                }
+            cv_text_c(120, ty_y(118, TY_LB), TY_LB, m, tx, bg);
+            fmt_int(m, (int32_t)(secs / 60u));
+            str_cpy(m + str_len(m), secs % 60u < 10u ? ":0" : ":", 3);
+            fmt_int(m + str_len(m), (int32_t)(secs % 60u));
+            str_cpy(m + str_len(m), " ON THE CLOCK", 14);
+            cv_text_c(120, ty_y(140, TY_LB), TY_LB, m, tx, bg);
+            fmt_int(m, am.rwd_all);
+            str_cpy(m + str_len(m), am.rwd_all == 1u ? " REWIND, " : " REWINDS, ", 11);
+            n = (am.vips & 1u) + ((am.vips >> 1) & 1u);
+            fmt_int(m + str_len(m), (int32_t)n);
+            str_cpy(m + str_len(m), n == 1u ? " VIP CUT" : " VIPS CUT", 10);
+            cv_text_c(120, ty_y(162, TY_LB), TY_LB, m, tx, bg);
+            cv_text_c(120, ty_y(190, TY_LB), TY_LB, "AMETHYST: JOSH & KIPATCHI", RGB(206, 172, 248), bg);
+            cv_text_c(120, ty_y(212, TY_LB), TY_LB, "RECORD IT OVER USB", RGB(150, 140, 160), bg);
+            cv_rect(8, 230, 224, 2, hi);
+        } else if (am.notes) {                          /* the sleeve notes: where the night comes from */
             cv_rect(0, 66, 240, 174, RGB(12, 10, 10));
             for (i = 0; i < 10u; i++)
                 cv_text_c(120, ty_y(76 + (int32_t)i * 17, TY_LB), TY_LB, st->notes[i], i >= st->credit ? RGB(150, 140, 160) : RGB(214, 196, 160),
@@ -565,7 +673,7 @@ static void am_draw(void)
 static void am_leds(void)
 {
     static const uint8_t USED[] = {B_FX, B_SCL, B_ENV, B_LFO, B_EDIT, B_GLO, B_HOME, B_SAVE, B_ARP, B_OCTDN, B_OCTUP,
-                                   B_PLAY, B_SEQ};
+                                   B_PLAY, B_SEQ, B_REC};
     uint8_t nl[FM1_NCOL] = {0}, nd[FM1_NCOL] = {0}, nb[FM1_NCOL] = {0};
     uint32_t k, c, blink = (fm1_ms / 160u) & 1u;
     for (k = 0; k < 27u; k++) {
@@ -583,6 +691,7 @@ static void am_leds(void)
     led_put(nl, panel.btn[B_GLO], am_seq.siren);
     led_put(nl, panel.btn[B_ARP], am_seq.layout != 0u);
     led_put(nl, panel.btn[B_HOME], am.notes);
+    led_put(nl, panel.btn[B_REC], am.rec && (!(song.rec_wait >> am.rec_trk & 1u) || blink));   /* waiting: it blinks */
     led_put(nl, panel.btn[B_SEQ], !trk[AM_TBREAK].p[P_MUTE]);
     led_put(nl, panel.btn[B_OCTDN], am.oct < 0);
     led_put(nl, panel.btn[B_OCTUP], am.oct > 0);
@@ -718,6 +827,16 @@ static int am_frame(void)
         static const char *const L[3] = {"KEYS: BASS AND CHORDS", "KEYS: ALL BASS", "KEYS: ALL CHORDS"};
         am_seq.layout = (uint8_t)((am_seq.layout + 1u) % 3u);
         am_say(L[am_seq.layout]);
+    }
+    if (pressed & AM_BTN(B_REC))
+        am.rec_t0 = fm1_ms | 1u;
+    if ((fm1_in.buttons & AM_BTN(B_REC)) && am.rec_t0 && am_since(am.rec_t0) >= 400u)
+        am.tape = 1;                                    /* REC held: the tape pack while it is */
+    if (released & AM_BTN(B_REC)) {                     /* REC tapped: a take */
+        if (!am.tape)
+            am_rec();
+        am.tape = 0;
+        am.rec_t0 = 0;
     }
     if (released & AM_BTN(B_HOME)) {                    /* HOME tapped (not held with SAVE): the sleeve notes */
         if (!am.home_combo)

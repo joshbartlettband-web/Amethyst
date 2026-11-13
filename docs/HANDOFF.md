@@ -33,6 +33,8 @@ Two stages are built, FRIDAY at The End and DARKSIDE at Turnmills (`AM_STAGES[]`
 | SEQ | Break mute toggle |
 | ARP | Key layout: bass and chords / all bass / all chords (`am_seq.layout`) |
 | HOME tap | Sleeve notes on and off |
+| REC tap | Four bars of the side last played (bass or chords) into its track, by Melodee's recorder (`rec_set`): waits for the track's 64-step loop to come round, one pass, then loops. Again: a layer. During a take: that side wiped |
+| REC held | The tape pack: stages played, the clock, rewinds, VIPs cut |
 | PLAY | Start / stop |
 | OCT- / OCT+ | Bass octave |
 | SELECT | Tempo 140..180 |
@@ -168,7 +170,12 @@ and a few torn rows now, FOG is per row, WOBBLE sways 4 px at most). One trap fo
 Steps 4 and 6 are done too. Step 6 came first, because the second photo needed its room: `AMETHYST_NO_FACTORY`
 in `core.h` empties both banks. DARKSIDE's bass is a darker Prophet Reese (`AM_DREESE`), not the CZ-1 patch the
 plan asks for; voice that once Josh has listened. Melodee's tests that count 200 programs and 64 tones fail with
-the flag on (CI doesn't run them). Step 5 is next, and Josh has to be asked first.
+the flag on (CI doesn't run them).
+
+Step 5 is built except saving: REC, the tape pack, and the shout-outs (a phone in the corner every 16 bars and
+after a rewind, `AM_SHOUTS`). SAVE does nothing yet. Nothing persists: the knobs, the loops and the VIPs are gone
+at power-off. The settings record (`settings_persist.c`) has no spare words left, the browser build has no flash,
+and nobody has a device to check a flash write on, so ask Josh what should be kept and wait for hardware.
 - **LFO held**: `PX_STOP` while held; on release clear it and carry on (no transport stop). Remove the tap logic.
 - **EDIT held**: break muted while held (`trk[AM_TBREAK].p[P_MUTE]`), restore on release. SEQ stays the latch.
 - **GLO held**: dub siren. Simplest: track 3 (index 2, currently muted) gets its own Prophet program (pulse,
